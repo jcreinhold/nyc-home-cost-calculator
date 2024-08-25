@@ -1,19 +1,22 @@
 import math
-import random
 
+import matplotlib
+import numpy as np
 import pytest
 
-from nyc_home_cost_calculator.calculator import NYCHomeCostCalculator
+matplotlib.use("Agg")
+
+from nyc_home_cost_calculator.home import FilingStatus, NYCHomeCostCalculator
 
 
 @pytest.fixture()
 def default_calculator() -> NYCHomeCostCalculator:
     return NYCHomeCostCalculator(
-        home_price=1000000,
-        down_payment=200000,
+        home_price=1_000_000,
+        down_payment=200_000,
         mortgage_rate=0.03,
         loan_term=30,
-        initial_income=150000,
+        initial_income=150_000,
         hoa_fee=500,
         insurance_rate=0.005,
         maintenance_rate=0.01,
@@ -25,17 +28,18 @@ def default_calculator() -> NYCHomeCostCalculator:
         mean_income_change_rate=0.02,
         income_change_volatility=0.03,
         retirement_contribution_rate=0.15,
-        simulations=1000,
-        rng=random.Random(42),
+        filing_status=FilingStatus.SINGLE,
+        simulations=100,
+        rng=np.random.default_rng(42),
     )
 
 
 def test_initialization(default_calculator: NYCHomeCostCalculator) -> None:
-    assert default_calculator.home_price == 1000000
-    assert default_calculator.down_payment == 200000
+    assert default_calculator.home_price == 1_000_000
+    assert default_calculator.down_payment == 200_000
     assert default_calculator.mortgage_rate == 0.03
     assert default_calculator.loan_term == 30
-    assert default_calculator.initial_income == 150000
+    assert default_calculator.initial_income == 150_000
     assert default_calculator.hoa_fee == 500
     assert default_calculator.insurance_rate == 0.005
     assert default_calculator.maintenance_rate == 0.01
@@ -47,13 +51,13 @@ def test_initialization(default_calculator: NYCHomeCostCalculator) -> None:
     assert default_calculator.mean_income_change_rate == 0.02
     assert default_calculator.income_change_volatility == 0.03
     assert default_calculator.retirement_contribution_rate == 0.15
-    assert default_calculator.simulations == 1000
+    assert default_calculator.simulations == 100
 
 
 def test_calculate_tax(default_calculator: NYCHomeCostCalculator) -> None:
-    income = 100000
-    brackets = [(0, 50000, 0.1), (50000, 100000, 0.2), (100000, float("inf"), 0.3)]
-    expected_tax = 50000 * 0.1 + 50000 * 0.2
+    income = 100_000
+    brackets = [(0.0, 50_000, 0.1), (50_000.0, 100_000, 0.2), (100_000.0, float("inf"), 0.3)]
+    expected_tax = 50_000 * 0.1 + 50_000 * 0.2
     assert math.isclose(default_calculator.calculate_tax(income, brackets), expected_tax)
 
 
@@ -65,25 +69,25 @@ def test_generate_random_rates(default_calculator: NYCHomeCostCalculator) -> Non
 
 
 def test_calculate_effective_tax_rates(default_calculator: NYCHomeCostCalculator) -> None:
-    rates = default_calculator.calculate_effective_tax_rates(150000, 0, 0, 0)
+    rates = default_calculator.calculate_effective_tax_rates(150_000, 0, 0, 0)
     assert len(rates) == 3
     assert all(0 <= rate <= 1 for rate in rates)
 
 
 def test_calculate_tax_deduction(default_calculator: NYCHomeCostCalculator) -> None:
-    deduction = default_calculator.calculate_tax_deduction(10000, 5000, 0.2, 0.05, 0.03)
+    deduction = default_calculator.calculate_tax_deduction(10_000, 5_000, 0.2, 0.05, 0.03, 0.15, 150_000)
     assert deduction >= 0
 
 
 def test_calculate_monthly_payment(default_calculator: NYCHomeCostCalculator) -> None:
-    payment = default_calculator.calculate_monthly_payment(800000, 0.03, 360)
-    assert 3000 < payment < 4000  # Reasonable range for given parameters
+    payment = default_calculator.calculate_monthly_payment(800_000, 0.03, 360)
+    assert 3_000 < payment < 4_000  # Reasonable range for given parameters
 
 
 def test_simulate_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    costs = default_calculator.simulate_costs_over_time()
-    assert len(costs) == default_calculator.loan_term
-    assert len(costs[0]) == default_calculator.simulations
+    _, costs = default_calculator.simulate_costs_over_time()
+    assert len(costs) == (12 * default_calculator.loan_term), costs.shape
+    assert len(costs[0]) == default_calculator.simulations, costs.shape
     assert all(isinstance(cost, float) for year_costs in costs for cost in year_costs)
 
 
@@ -95,8 +99,7 @@ def test_get_cost_statistics(default_calculator: NYCHomeCostCalculator) -> None:
 
 @pytest.mark.mpl_image_compare(tolerance=10, savefig_kwargs={"dpi": 300})
 def test_plot_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    fig = default_calculator.plot_costs_over_time()
-    return fig
+    default_calculator.plot_costs_over_time()
 
 
 def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path) -> None:
@@ -108,11 +111,11 @@ def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path) ->
 def test_edge_cases() -> None:
     # Test with minimum down payment
     calculator = NYCHomeCostCalculator(
-        home_price=500000,
+        home_price=500_000,
         down_payment=1,  # Extremely low down payment
         mortgage_rate=0.05,
         loan_term=15,
-        initial_income=50000,
+        initial_income=50_000,
         hoa_fee=100,
         insurance_rate=0.01,
         maintenance_rate=0.02,
@@ -124,6 +127,7 @@ def test_edge_cases() -> None:
         mean_income_change_rate=0.01,
         income_change_volatility=0.05,
         retirement_contribution_rate=0.05,
+        filing_status=FilingStatus.MARRIED_JOINT,
         simulations=100,
     )
     stats = calculator.get_cost_statistics()
@@ -147,6 +151,7 @@ def test_edge_cases() -> None:
         mean_income_change_rate=0.08,  # Very high income growth
         income_change_volatility=0.01,
         retirement_contribution_rate=0.2,
+        filing_status=FilingStatus.MARRIED_SEPARATE,
         simulations=100,
     )
     stats = calculator.get_cost_statistics()

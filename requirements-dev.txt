@@ -1,0 +1,26 @@
+# Development tools
+mypy
+pytest
+pytest-cov
+pytest-mpl
+ruff
+Sphinx
+
+# Jupyter environment
+jupyterlab
+ipykernel
+ipywidgets
+nbconvert
+notebook
+
+# Data analysis and visualization
+pandas
+numpy
+seaborn
+
+# Type stubs for better type checking
+types-requests
+
+# Optional: for advanced Jupyter features
+jupyter-lsp
+jupyterlab-lsp

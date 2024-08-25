@@ -1,0 +1,5 @@
+# Core dependencies
+matplotlib
+openpyxl 
+scipy
+tqdm

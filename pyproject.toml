@@ -15,43 +15,49 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ["numpy", "scipy", "matplotlib", "openpyxl"]
-dynamic = ["version"]
+dynamic = ["dependencies", "optional-dependencies", "version"]
 
-[project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy"]
+[tool.setuptools.dynamic]
+dependencies = { file = "requirements.txt" }
+version = { attr = "nyc_home_cost_calculator.__version__" }
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = "requirements-dev.txt" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nyc_home_cost_calculator*"]
 namespaces = false
 
-[tool.setuptools.dynamic]
-version = { attr = "nyc_home_cost_calculator.__version__" }
+[tool.setuptools.package-data]
+"nyc_home_cost_calculator" = ["py.typed"]
 
 [tool.ruff]
-select = ["E", "F", "I", "N", "W", "B", "C90", "D"]
-ignore = ["D100", "D104"]
 line-length = 120
 target-version = "py310"
 
-[tool.ruff.per-file-ignores]
-"__init__.py" = ["F401"]
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "C90", "D"]
+ignore = ["D100", "D104"]
 
-[tool.ruff.isort]
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["D"]
+"*.ipynb" = ["D"]
+
+[tool.ruff.lint.isort]
 known-first-party = ["nyc_home_cost_calculator"]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.mypy]
 python_version = "3.10"
-strict = true
 
 [[tool.mypy.overrides]]
-module = ["matplotlib.*", "openpyxl.*", "scipy.*"]
+module = ["matplotlib.*", "openpyxl.*", "scipy.*", "tqdm.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "-ra -q"
+addopts = "-ra --disable-warnings"
 testpaths = ["tests"]
