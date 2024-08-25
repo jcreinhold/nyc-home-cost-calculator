@@ -222,7 +222,7 @@ class NYCRentalCostCalculator:
         plt.fill_between(years, lower_bound, upper_bound, alpha=0.2, label="95% Confidence Interval")
 
         plt.title("Projected Cumulative Rental Costs Over Time")
-        plt.xlabel("Months")
+        plt.xlabel("Years")
         plt.ylabel("Cumulative Cost ($)")
         plt.legend()
         plt.grid(True)
