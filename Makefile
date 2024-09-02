@@ -3,7 +3,7 @@
 .DEFAULT_GOAL := help
 
 PYTHON := python3
-VENV := venv
+VENV := .venv
 BIN := $(VENV)/bin
 
 define PRINT_HELP

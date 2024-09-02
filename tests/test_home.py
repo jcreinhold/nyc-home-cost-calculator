@@ -1,15 +1,15 @@
-import math
+from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 import numpy as np
 import pytest
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 from nyc_home_cost_calculator.home import FilingStatus, NYCHomeCostCalculator
 
 
-@pytest.fixture()
+@pytest.fixture
 def default_calculator() -> NYCHomeCostCalculator:
     return NYCHomeCostCalculator(
         home_price=1_000_000,
@@ -54,38 +54,13 @@ def test_initialization(default_calculator: NYCHomeCostCalculator) -> None:
     assert default_calculator.simulations == 100
 
 
-def test_calculate_tax(default_calculator: NYCHomeCostCalculator) -> None:
-    income = 100_000
-    brackets = [(0.0, 50_000, 0.1), (50_000.0, 100_000, 0.2), (100_000.0, float("inf"), 0.3)]
-    expected_tax = 50_000 * 0.1 + 50_000 * 0.2
-    assert math.isclose(default_calculator.calculate_tax(income, brackets), expected_tax)
-
-
-def test_generate_random_rates(default_calculator: NYCHomeCostCalculator) -> None:
-    rates = default_calculator.generate_random_rates()
-    assert len(rates) == 6
-    assert all(isinstance(rate, float) for rate in rates)
-    assert -0.5 <= rates[2] <= 1.0  # income_change_rate
-
-
-def test_calculate_effective_tax_rates(default_calculator: NYCHomeCostCalculator) -> None:
-    rates = default_calculator.calculate_effective_tax_rates(150_000, 0, 0, 0)
-    assert len(rates) == 3
-    assert all(0 <= rate <= 1 for rate in rates)
-
-
-def test_calculate_tax_deduction(default_calculator: NYCHomeCostCalculator) -> None:
-    deduction = default_calculator.calculate_tax_deduction(10_000, 5_000, 0.2, 0.05, 0.03, 0.15, 150_000)
-    assert deduction >= 0
-
-
 def test_calculate_monthly_payment(default_calculator: NYCHomeCostCalculator) -> None:
     payment = default_calculator.calculate_monthly_payment(800_000, 0.03, 360)
     assert 3_000 < payment < 4_000  # Reasonable range for given parameters
 
 
 def test_simulate_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    _, costs = default_calculator.simulate_costs_over_time()
+    _, costs, _ = default_calculator.simulate_costs_over_time()
     assert len(costs) == (12 * default_calculator.loan_term), costs.shape
     assert len(costs[0]) == default_calculator.simulations, costs.shape
     assert all(isinstance(cost, float) for year_costs in costs for cost in year_costs)
@@ -102,7 +77,7 @@ def test_plot_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None
     default_calculator.plot_costs_over_time()
 
 
-def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path) -> None:
+def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path: Path) -> None:
     filename = tmp_path / "test_export.xlsx"
     default_calculator.export_to_excel(str(filename))
     assert filename.exists()

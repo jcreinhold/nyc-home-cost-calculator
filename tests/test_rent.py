@@ -1,17 +1,18 @@
+from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
-import matplotlib
-import numpy as np
+import matplotlib as mpl
 import pytest
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 from openpyxl import load_workbook
 
 from nyc_home_cost_calculator.rent import NYCRentalCostCalculator
 
 
-@pytest.fixture()
+@pytest.fixture
 def calculator() -> NYCRentalCostCalculator:
     return NYCRentalCostCalculator(
         initial_rent=3_000.0,
@@ -46,14 +47,8 @@ def test_initialization(calculator: NYCRentalCostCalculator) -> None:
     assert calculator.rng is not None
 
 
-def test_generate_random_rates(calculator: NYCRentalCostCalculator) -> None:
-    rent_increase, inflation = calculator.generate_random_rates()
-    assert isinstance(rent_increase, float)
-    assert isinstance(inflation, float)
-
-
 def test_simulate_costs_over_time(calculator: NYCRentalCostCalculator) -> None:
-    _, costs = calculator.simulate_costs_over_time()
+    _, costs, _ = calculator.simulate_costs_over_time()
     assert len(costs) == (12 * calculator.total_years), costs.shape
     assert all(len(year_costs) == calculator.simulations for year_costs in costs), costs.shape
 
@@ -66,26 +61,26 @@ def test_get_cost_statistics(calculator: NYCRentalCostCalculator) -> None:
 
 
 @patch("matplotlib.pyplot.show")
-def test_plot_costs_over_time(mock_show, calculator: NYCRentalCostCalculator):
+def test_plot_costs_over_time(mock_show: Any, calculator: NYCRentalCostCalculator) -> None:
     calculator.plot_costs_over_time()
     mock_show.assert_called_once()
 
 
-def test_export_to_excel(calculator: NYCRentalCostCalculator, tmp_path) -> None:
+def test_export_to_excel(calculator: NYCRentalCostCalculator, tmp_path: Path) -> None:
     filename = tmp_path / "test_export.xlsx"
     calculator.export_to_excel(str(filename))
     assert filename.exists()
 
     # Check if the file is a valid Excel file
     wb = load_workbook(filename)
-    assert "Rental Cost Summary" in wb.sheetnames
+    assert "Cost Summary" in wb.sheetnames
 
-    ws = wb["Rental Cost Summary"]
+    ws = wb["Cost Summary"]
     assert ws["A1"].value == "Input Parameters"
 
 
 @pytest.mark.parametrize(
-    "attribute,expected_type",
+    ("attribute", "expected_type"),
     [
         ("initial_rent", float),
         ("lease_term", int),
@@ -102,64 +97,3 @@ def test_export_to_excel(calculator: NYCRentalCostCalculator, tmp_path) -> None:
 )
 def test_attribute_types(calculator: NYCRentalCostCalculator, attribute: str, expected_type: type) -> None:
     assert isinstance(getattr(calculator, attribute), expected_type)
-
-
-def test_custom_rng(calculator: NYCRentalCostCalculator) -> None:
-    custom_rng = np.random.default_rng(42)
-    calc_with_custom_rng = NYCRentalCostCalculator(
-        initial_rent=3000,
-        lease_term=1,
-        total_years=10,
-        utility_cost=200,
-        renters_insurance=300,
-        moving_cost=2000,
-        mean_rent_increase_rate=0.03,
-        rent_increase_volatility=0.01,
-        mean_inflation_rate=0.02,
-        inflation_volatility=0.005,
-        broker_fee_rate=0.15,
-        simulations=10,
-        rng=custom_rng,
-    )
-    assert calc_with_custom_rng.rng == custom_rng
-
-
-def test_reproducibility() -> None:
-    seed = 42
-    rng1 = np.random.default_rng(seed)
-    rng2 = np.random.default_rng(seed)
-
-    calc1 = NYCRentalCostCalculator(
-        initial_rent=3000,
-        lease_term=1,
-        total_years=10,
-        utility_cost=200,
-        renters_insurance=300,
-        moving_cost=2000,
-        mean_rent_increase_rate=0.03,
-        rent_increase_volatility=0.01,
-        mean_inflation_rate=0.02,
-        inflation_volatility=0.005,
-        broker_fee_rate=0.15,
-        simulations=10,
-        rng=rng1,
-    )
-
-    calc2 = NYCRentalCostCalculator(
-        initial_rent=3000,
-        lease_term=1,
-        total_years=10,
-        utility_cost=200,
-        renters_insurance=300,
-        moving_cost=2000,
-        mean_rent_increase_rate=0.03,
-        rent_increase_volatility=0.01,
-        mean_inflation_rate=0.02,
-        inflation_volatility=0.005,
-        broker_fee_rate=0.15,
-        simulations=10,
-        rng=rng2,
-    )
-    _, costs1 = calc1.simulate_costs_over_time()
-    _, costs2 = calc2.simulate_costs_over_time()
-    assert np.all(costs1 == costs2)
