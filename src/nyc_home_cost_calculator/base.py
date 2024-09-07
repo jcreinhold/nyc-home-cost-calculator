@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,9 +13,9 @@ from matplotlib import ticker
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from scipy import stats
 
 from nyc_home_cost_calculator.simulate import SimulationEngine, SimulationResults
+from nyc_home_cost_calculator.utils import calculate_confidence_intervals
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,66 @@ class LocScaleRV:
         return self.rng.normal(self.loc, self.scale, shape)
 
 
-class AbstractNYCCostCalculator(ABC):
+class AbstractSimulatorBase(ABC):
+    """Abstract base class for all financial simulators."""
+
+    def __init__(
+        self,
+        total_years: int,
+        simulations: int,
+        rng: np.random.Generator | None = None,
+    ):
+        """Initialize the simulator base.
+
+        Args:
+            total_years: The total number of years to simulate.
+            simulations: The number of Monte Carlo simulations to run.
+            rng: Custom random number generator. If None, use default numpy RNG.
+        """
+        self.total_years = total_years
+        self.simulations = simulations
+        self.rng = rng or np.random.default_rng()
+        self.simulation_engine = SimulationEngine(total_years * 12, simulations, self.rng)
+
+    @abstractmethod
+    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
+        """Run the vectorized simulation.
+
+        This method should be implemented by subclasses to perform the actual
+        simulation calculations.
+
+        Args:
+            months: A 2D numpy array of shape (total_months, num_simulations)
+                    representing the months to simulate.
+
+        Returns:
+            A SimulationResults object containing the results of the simulation.
+        """
+
+    @abstractmethod
+    def _get_input_parameters(self) -> list[tuple[str, Any]]:
+        """Get the input parameters for the simulator.
+
+        This method should be implemented by subclasses to return a list of
+        tuples, where each tuple contains the name of a parameter and its value.
+
+        Returns:
+            A list of tuples, each containing a parameter name and its value.
+        """
+
+    def simulate(self) -> SimulationResults:
+        """Run the simulation and return the results.
+
+        This method sets up the simulation environment and calls the
+        _simulate_vectorized method to perform the actual calculations.
+
+        Returns:
+            A SimulationResults object containing the results of the simulation.
+        """
+        return self.simulation_engine.run_simulation(self._simulate_vectorized)
+
+
+class AbstractNYCCostCalculator(AbstractSimulatorBase):
     """Abstract base class for the NYC Home/Rent Cost Calculator."""
 
     def __init__(
@@ -61,38 +121,19 @@ class AbstractNYCCostCalculator(ABC):
             simulations: The number of simulations to run.
             rng: The random number generator.
         """
+        super().__init__(total_years, simulations, rng)
         self.initial_cost = initial_cost
-        self.total_years = total_years
         self.mean_inflation_rate = mean_inflation_rate
         self.inflation_volatility = inflation_volatility
-        self.simulations = simulations
-        self.rng = rng or np.random.default_rng()
-        self.simulation_engine = SimulationEngine(total_years * 12, simulations, self.rng)
 
-    @abstractmethod
-    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
-        pass
-
-    @abstractmethod
-    def _get_input_parameters(self) -> list[tuple[str, str]]:
-        pass
-
-    def simulate_costs_over_time(self) -> SimulationResults:
-        """Simulate the costs over time.
-
-        Returns:
-            An instance of SimulationResults containing the simulated costs over time.
-        """
-        return self.simulation_engine.run_simulation(self._simulate_vectorized)
-
-    def get_cost_statistics(self, cumulative_costs: np.ndarray | None = None) -> dict[str, float]:
+    def get_cost_statistics(self, profit_loss: np.ndarray | None = None) -> dict[str, float]:
         """Calculate summary statistics of the simulated costs.
 
         This method runs the cost simulations and computes various statistical measures
         based on the final year's profit/loss values across all simulations.
 
         Args:
-            cumulative_costs: A list of lists, where each inner list represents a month and
+            profit_loss: A list of lists, where each inner list represents a month and
                 contains the profit/loss values for each simulation at that month.
 
         Returns:
@@ -103,10 +144,14 @@ class AbstractNYCCostCalculator(ABC):
                 - percentile_5: 5th percentile of profit/loss
                 - percentile_95: 95th percentile of profit/loss
         """
-        if cumulative_costs is None:
-            _, cumulative_costs, _ = self.simulate_costs_over_time()
+        if profit_loss is None:
+            profit_loss = self.simulate().profit_loss
 
-        final_year_costs = cumulative_costs[-1]
+        if profit_loss is None:
+            msg = "Could not find cumulative costs."
+            raise ValueError(msg)
+
+        final_year_costs = profit_loss[-1]
 
         return {
             "mean": final_year_costs.mean(),
@@ -116,7 +161,14 @@ class AbstractNYCCostCalculator(ABC):
             "percentile_95": np.quantile(final_year_costs, 0.95),
         }
 
-    def plot_costs_over_time(self, cumulative_costs: np.ndarray | None = None) -> None:
+    def plot(
+        self,
+        profit_loss: np.ndarray | None = None,
+        figsize: tuple[int, int] = (12, 6),
+        title: str = "Projected Costs Over Time",
+        ylabel: str = "Cost ($)",
+        label: str = "Average Cost",
+    ) -> None:
         """Plot the projected profit/loss over time with confidence intervals.
 
         This method generates a line plot showing the average profit/loss for each month
@@ -124,34 +176,30 @@ class AbstractNYCCostCalculator(ABC):
         break-even line for reference.
 
         Args:
-            cumulative_costs: A list of lists, where each inner list represents a month and
+            profit_loss: A list of lists, where each inner list represents a month and
                 contains the profit/loss values for each simulation at that month.
+            figsize: A tuple specifying the figure size in inches (width, height).
+            title: The title of the plot.
+            ylabel: The label for the y-axis.
+            label: The label for the average cost line.
         """
-        if cumulative_costs is None:
-            _, cumulative_costs, _ = self.simulate_costs_over_time()
+        if profit_loss is None:
+            profit_loss = self.simulate().profit_loss
+
+        if profit_loss is None:
+            msg = "Could not find cumulative costs."
+            raise ValueError(msg)
 
         years = np.array(list(range(1, (12 * self.total_years) + 1))) / 12
-        avg_costs = cumulative_costs.mean(axis=1)
+        avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss)
 
-        ci_lower = [
-            stats.t.ppf(0.025, len(year_costs) - 1) * (stats.tstd(year_costs) / np.sqrt(len(year_costs)))
-            for year_costs in cumulative_costs
-        ]
-        ci_upper = [
-            stats.t.ppf(0.975, len(year_costs) - 1) * (stats.tstd(year_costs) / np.sqrt(len(year_costs)))
-            for year_costs in cumulative_costs
-        ]
-
-        lower_bound = [avg + ci_low for avg, ci_low in zip(avg_costs, ci_lower, strict=True)]
-        upper_bound = [avg + ci_up for avg, ci_up in zip(avg_costs, ci_upper, strict=True)]
-
-        plt.figure(figsize=(12, 6))
-        plt.plot(years, avg_costs, label="Average Cost")
+        plt.figure(figsize=figsize)
+        plt.plot(years, avg_costs, label=label)
         plt.fill_between(years, lower_bound, upper_bound, alpha=0.2, label="95% Confidence Interval")
 
-        plt.title("Projected Costs Over Time")
+        plt.title(title)
         plt.xlabel("Years")
-        plt.ylabel("Cost ($)")
+        plt.ylabel(ylabel)
         plt.legend()
         plt.grid(visible=True)
 
@@ -163,7 +211,7 @@ class AbstractNYCCostCalculator(ABC):
         plt.tight_layout()
         plt.show()
 
-    def export_to_excel(self, filename: str, cumulative_costs: np.ndarray | None = None) -> None:  # noqa: C901, PLR0912, PLR0915
+    def export_to_excel(self, filename: str, profit_loss: np.ndarray | None = None) -> None:  # noqa: C901, PLR0912, PLR0915
         """Export simulation results and input parameters to an Excel file.
 
         This method creates a formatted Excel workbook with three main sections:
@@ -173,11 +221,15 @@ class AbstractNYCCostCalculator(ABC):
 
         Args:
             filename: The name of the Excel file to be created.
-            cumulative_costs: A list of lists, where each inner list represents a month and
+            profit_loss: A list of lists, where each inner list represents a month and
                 contains the profit/loss values for each simulation at that month.
         """
-        if cumulative_costs is None:
-            _, cumulative_costs, _ = self.simulate_costs_over_time()
+        if profit_loss is None:
+            profit_loss = self.simulate().profit_loss
+
+        if profit_loss is None:
+            msg = "Could not find cumulative costs."
+            raise ValueError(msg)
 
         wb = Workbook()
         ws = wb.active
@@ -229,7 +281,7 @@ class AbstractNYCCostCalculator(ABC):
             cell.alignment = alignment
             cell.border = border
 
-        cost_stats = self.get_cost_statistics(cumulative_costs)
+        cost_stats = self.get_cost_statistics(profit_loss)
         for stat, value in cost_stats.items():
             ws.append([stat.capitalize(), f"${value:,.2f}"])
 
@@ -254,15 +306,7 @@ class AbstractNYCCostCalculator(ABC):
             cell.border = border
 
         months = list(range(1, (12 * self.total_years) + 1))
-        avg_costs = cumulative_costs.mean(axis=1)
-        ci_lower = [
-            stats.t.ppf(0.025, len(month_costs) - 1) * (stats.tstd(month_costs) / np.sqrt(len(month_costs)))
-            for month_costs in cumulative_costs
-        ]
-        ci_upper = [
-            stats.t.ppf(0.975, len(month_costs) - 1) * (stats.tstd(month_costs) / np.sqrt(len(month_costs)))
-            for month_costs in cumulative_costs
-        ]
+        avg_costs, ci_lower, ci_upper = calculate_confidence_intervals(profit_loss)
 
         for month, avg, lower, upper in zip(months, avg_costs, ci_lower, ci_upper, strict=True):
             ws.append([month, f"${avg:,.2f}", f"${avg+lower:,.2f}", f"${avg+upper:,.2f}"])

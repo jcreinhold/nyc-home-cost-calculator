@@ -5,8 +5,22 @@ from __future__ import annotations
 import numpy as np
 
 from nyc_home_cost_calculator.base import AbstractNYCCostCalculator, LocScaleRV
+from nyc_home_cost_calculator.income import CareerIncomeSimulator
+from nyc_home_cost_calculator.life import FinancialLifeSimulator
 from nyc_home_cost_calculator.simulate import SimulationResults
 from nyc_home_cost_calculator.tax import FilingStatus, TaxCalculator
+
+
+class _StudentTRV(LocScaleRV):
+    def __init__(self, loc: float, scale: float, df: float, rng: np.random.Generator | None = None):
+        super().__init__(loc, scale, rng)
+        self.df = df
+
+    def __call__(self, shape: tuple[int, ...]) -> np.ndarray:
+        if self.rng is None:
+            msg = "Random number generator is not initialized."
+            raise ValueError(msg)
+        return self.rng.standard_t(df=self.df, size=shape) * self.scale + self.loc
 
 
 class NYCHomeCostCalculator(AbstractNYCCostCalculator):
@@ -42,6 +56,11 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         extra_payment_end_year: int = 30,
         purchase_closing_cost_rate: float = 0.03,
         sale_closing_cost_rate: float = 0.07,
+        marriage_probability: float = 0.05,
+        divorce_probability: float = 0.02,
+        partner_income_ratio: float = 0.8,
+        divorce_cost: float = 50_000.0,
+        degrees_of_freedom: int = 5,
         simulations: int = 5_000,
         rng: np.random.Generator | None = None,
     ):
@@ -71,6 +90,11 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             extra_payment_end_year: Year into loan term that extra payments are ended. Defaults to year 30.
             purchase_closing_cost_rate: Closing costs for purchase as a percentage of home price. Defaults to 4%.
             sale_closing_cost_rate: Closing costs for sale as a percentage of sale price. Defaults to 7%.
+            marriage_probability: Probability of getting married. Defaults to 5%.
+            divorce_probability: Probability of getting divorced. Defaults to 2%.
+            partner_income_ratio: Ratio of partner's income to the homeowner's income. Defaults to 0.8.
+            divorce_cost: Cost of divorce. Defaults to $50,000.
+            degrees_of_freedom: The degrees of freedom for the Student's t (for appreciation). Defaults to 5.
             simulations: Number of Monte Carlo simulations to run. Defaults to 5,000.
             rng: Custom random number generator. If None, use default numpy RNG. Defaults to None.
         """
@@ -105,13 +129,36 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         self.purchase_closing_cost_rate = purchase_closing_cost_rate
         self.sale_closing_cost_rate = sale_closing_cost_rate
 
-        self.tax_calculator = TaxCalculator(filing_status)
+        self.tax_calculator = TaxCalculator()
 
         self.purchase_closing_costs = self.home_price * self.purchase_closing_cost_rate
         self.loan_amount = self.home_price - self.down_payment + self.purchase_closing_costs
         self.monthly_payment = self.calculate_monthly_payment(self.loan_amount, self.mortgage_rate, self.loan_term * 12)
 
-        self.appreciation_rate = LocScaleRV(self.mean_appreciation_rate, self.appreciation_volatility, self.rng)
+        self.career_simulator = CareerIncomeSimulator(
+            initial_income=initial_income,
+            total_years=loan_term,
+            mean_income_growth=mean_income_change_rate,
+            income_volatility=income_change_volatility,
+            simulations=simulations,
+            rng=rng,
+        )
+
+        self.life_simulator = FinancialLifeSimulator(
+            career_simulator=self.career_simulator,
+            initial_age=initial_age,
+            marriage_probability=marriage_probability,
+            divorce_probability=divorce_probability,
+            partner_income_ratio=partner_income_ratio,
+            divorce_cost=divorce_cost,
+            initial_marriage_status=filing_status,
+            simulations=simulations,
+            rng=rng,
+        )
+
+        self.appreciation_rate = _StudentTRV(
+            self.mean_appreciation_rate, self.appreciation_volatility, degrees_of_freedom, self.rng
+        )
         self.inflation_rate = LocScaleRV(self.mean_inflation_rate, self.inflation_volatility, self.rng)
         self.income_change_rate = LocScaleRV(self.mean_income_change_rate, self.income_change_volatility, self.rng)
         self.federal_adjustment = LocScaleRV(0.0, 0.01, self.rng)
@@ -146,16 +193,27 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         hoa_fees = np.full(shape, self.hoa_fee)
         remaining_balances = np.full(shape, self.loan_amount)
 
+        # Simulate life events and income
+        life_results = self.life_simulator._simulate_vectorized(months)  # noqa: SLF001
+        if life_results.household_income is None:
+            msg = "Life simulator must return household_income in results."
+            raise ValueError(msg)
+        if life_results.marital_status is None:
+            msg = "Life simulator must return marital_status in results."
+            raise ValueError(msg)
+        incomes = life_results.household_income
+        marital_status = life_results.marital_status
+
         # Calculate cumulative rates
         # Adjust appreciation rate to account for inflation
-        real_appreciation_rate = (1.0 + self.appreciation_rate(shape)) * (1.0 + self.inflation_rate(shape)) - 1.0
+        inflation_rates = self.inflation_rate(shape)
+        appreciation_rates = self.appreciation_rate(shape)
+        real_appreciation_rate = (1.0 + appreciation_rates) * (1.0 + inflation_rates) - 1.0
         cumulative_real_appreciation = np.cumprod(1.0 + real_appreciation_rate / 12.0, axis=0)
-        cumulative_inflation = np.cumprod(1.0 + self.inflation_rate(shape) / 12.0, axis=0)
-        cumulative_income_change = np.cumprod(1.0 + self.income_change_rate(shape) / 12.0, axis=0)
+        cumulative_inflation = np.cumprod(1.0 + inflation_rates / 12.0, axis=0)
 
         # Update values over time
         home_values = self.home_price * cumulative_real_appreciation
-        incomes = self.initial_income * cumulative_income_change
         hoa_fees = self.hoa_fee * cumulative_inflation
 
         # Calculate mortgage amortization
@@ -193,7 +251,12 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
 
         # Calculate tax rates
         effective_tax_rates = self.tax_calculator.calculate_effective_tax_rates(
-            incomes, self.federal_adjustment(shape), self.state_adjustment(shape), self.local_adjustment(shape)
+            incomes=incomes,
+            filing_status=marital_status,
+            federal_adj=self.federal_adjustment(shape),
+            state_adj=self.state_adjustment(shape),
+            local_adj=self.local_adjustment(shape),
+            inflation_rates=inflation_rates,
         )
 
         # Calculate ages for each month
@@ -210,6 +273,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             local_rates=effective_tax_rates.local_rate,
             retirement_contributions=incomes * self.retirement_contribution_rate,
             annual_incomes=incomes,
+            filing_status=marital_status,
         )
 
         # Convert annual tax deductions to monthly
@@ -238,23 +302,29 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         return SimulationResults(
             monthly_costs=monthly_costs,
             profit_loss=profit_loss,
+            home_values=home_values,
+            remaining_mortgage_balance=remaining_balances,
+            property_taxes=property_taxes,
+            insurance_costs=insurance,
+            maintenance_costs=maintenance,
+            household_income=incomes,
+            monthly_income=life_results.monthly_income,
+            partner_income=life_results.partner_income,
+            personal_income=life_results.personal_income,
+            marital_status=marital_status,
+            tax_deductions=tax_deductions,
+            federal_effective_tax_rate=effective_tax_rates.federal_rate,
+            state_effective_tax_rate=effective_tax_rates.state_rate,
+            local_effective_tax_rate=effective_tax_rates.local_rate,
+            cumulative_costs=cumulative_costs,
             extra={
-                "home_values": home_values,
-                "incomes": incomes,
                 "hoa_fees": hoa_fees,
-                "remaining_balances": remaining_balances,
                 "principal_payments": actual_principal_payments,
                 "interest_payments": actual_interest_payments,
-                "property_taxes": property_taxes,
-                "insurance": insurance,
-                "maintenance": maintenance,
-                "effective_tax_rates": effective_tax_rates,
-                "tax_deductions": tax_deductions,
-                "cumulative_costs": cumulative_costs,
                 "sale_closing_costs": sale_closing_costs,
                 "cumulative_real_appreciation": cumulative_real_appreciation,
                 "cumulative_inflation": cumulative_inflation,
-                "cumulative_income_change": cumulative_income_change,
+                "divorce_costs": life_results.extra["divorce_costs"],
             },
         )
 

@@ -60,7 +60,8 @@ def test_calculate_monthly_payment(default_calculator: NYCHomeCostCalculator) ->
 
 
 def test_simulate_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    _, costs, _ = default_calculator.simulate_costs_over_time()
+    costs = default_calculator.simulate().cumulative_costs
+    assert costs is not None
     assert len(costs) == (12 * default_calculator.loan_term), costs.shape
     assert len(costs[0]) == default_calculator.simulations, costs.shape
     assert all(isinstance(cost, float) for year_costs in costs for cost in year_costs)
@@ -74,7 +75,7 @@ def test_get_cost_statistics(default_calculator: NYCHomeCostCalculator) -> None:
 
 @pytest.mark.mpl_image_compare(tolerance=10, savefig_kwargs={"dpi": 300})
 def test_plot_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    default_calculator.plot_costs_over_time()
+    default_calculator.plot()
 
 
 def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path: Path) -> None:

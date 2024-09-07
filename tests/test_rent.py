@@ -48,7 +48,8 @@ def test_initialization(calculator: NYCRentalCostCalculator) -> None:
 
 
 def test_simulate_costs_over_time(calculator: NYCRentalCostCalculator) -> None:
-    _, costs, _ = calculator.simulate_costs_over_time()
+    costs = calculator.simulate().profit_loss
+    assert costs is not None
     assert len(costs) == (12 * calculator.total_years), costs.shape
     assert all(len(year_costs) == calculator.simulations for year_costs in costs), costs.shape
 
@@ -62,7 +63,7 @@ def test_get_cost_statistics(calculator: NYCRentalCostCalculator) -> None:
 
 @patch("matplotlib.pyplot.show")
 def test_plot_costs_over_time(mock_show: Any, calculator: NYCRentalCostCalculator) -> None:
-    calculator.plot_costs_over_time()
+    calculator.plot()
     mock_show.assert_called_once()
 
 

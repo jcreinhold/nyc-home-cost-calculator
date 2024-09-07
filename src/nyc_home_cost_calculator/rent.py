@@ -143,7 +143,7 @@ class NYCRentalCostCalculator(AbstractNYCCostCalculator):
         # Add initial move-in costs
         cumulative_costs += self.moving_cost + (self.initial_rent * 12 * self.broker_fee_rate)
 
-        return SimulationResults(monthly_costs=monthly_costs, profit_loss=-cumulative_costs, extra={})
+        return SimulationResults(monthly_costs=monthly_costs, profit_loss=-cumulative_costs)
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:
         return [

@@ -93,7 +93,7 @@ ignore = ["ANN101", "ANN102", "ANN204", "COM812", "PLR2004", "ISC001"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tests/*" = ["D", "S101", "ANN401"]
+"tests/*" = ["D", "S101", "ANN401", "SLF001"]
 "*.ipynb" = ["D", "ANN", "T20"]
 
 [tool.ruff.lint.isort]
@@ -106,7 +106,7 @@ convention = "google"
 max-line-length = 120
 
 [tool.ruff.lint.pylint]
-max-args = 25
+max-args = 30
 
 [tool.mypy]
 python_version = "3.10"
