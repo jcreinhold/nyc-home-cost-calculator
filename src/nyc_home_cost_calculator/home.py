@@ -4,23 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from nyc_home_cost_calculator.base import AbstractNYCCostCalculator, LocScaleRV
+from nyc_home_cost_calculator.base import AbstractNYCCostCalculator
 from nyc_home_cost_calculator.income import CareerIncomeSimulator
 from nyc_home_cost_calculator.life import FinancialLifeSimulator
 from nyc_home_cost_calculator.simulate import SimulationResults
 from nyc_home_cost_calculator.tax import FilingStatus, TaxCalculator
-
-
-class _StudentTRV(LocScaleRV):
-    def __init__(self, loc: float, scale: float, df: float, rng: np.random.Generator | None = None):
-        super().__init__(loc, scale, rng)
-        self.df = df
-
-    def __call__(self, shape: tuple[int, ...]) -> np.ndarray:
-        if self.rng is None:
-            msg = "Random number generator is not initialized."
-            raise ValueError(msg)
-        return self.rng.standard_t(df=self.df, size=shape) * self.scale + self.loc
+from nyc_home_cost_calculator.utils import NormalRV, StudentTRV
 
 
 class NYCHomeCostCalculator(AbstractNYCCostCalculator):
@@ -156,14 +145,17 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             rng=rng,
         )
 
-        self.appreciation_rate = _StudentTRV(
-            self.mean_appreciation_rate, self.appreciation_volatility, degrees_of_freedom, self.rng
+        self.appreciation_rate = StudentTRV(
+            self.mean_appreciation_rate,
+            self.appreciation_volatility,
+            shape=degrees_of_freedom,
+            rng=self.rng,
         )
-        self.inflation_rate = LocScaleRV(self.mean_inflation_rate, self.inflation_volatility, self.rng)
-        self.income_change_rate = LocScaleRV(self.mean_income_change_rate, self.income_change_volatility, self.rng)
-        self.federal_adjustment = LocScaleRV(0.0, 0.01, self.rng)
-        self.state_adjustment = LocScaleRV(0.0, 0.005, self.rng)
-        self.local_adjustment = LocScaleRV(0.0, 0.002, self.rng)
+        self.inflation_rate = NormalRV(self.mean_inflation_rate, self.inflation_volatility, rng=self.rng)
+        self.income_change_rate = NormalRV(self.mean_income_change_rate, self.income_change_volatility, rng=self.rng)
+        self.federal_adjustment = NormalRV(0.0, 0.01, rng=self.rng)
+        self.state_adjustment = NormalRV(0.0, 0.005, rng=self.rng)
+        self.local_adjustment = NormalRV(0.0, 0.002, rng=self.rng)
 
     def calculate_monthly_payment(self, principal: float, annual_rate: float, months: int) -> float:
         """Calculate the monthly mortgage payment.
@@ -302,6 +294,8 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         return SimulationResults(
             monthly_costs=monthly_costs,
             profit_loss=profit_loss,
+            simulations=num_simulations,
+            total_years=self.total_years,
             home_values=home_values,
             remaining_mortgage_balance=remaining_balances,
             property_taxes=property_taxes,
@@ -317,6 +311,9 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             state_effective_tax_rate=effective_tax_rates.state_rate,
             local_effective_tax_rate=effective_tax_rates.local_rate,
             cumulative_costs=cumulative_costs,
+            promotions=life_results.promotions,
+            demotions=life_results.demotions,
+            layoffs=life_results.layoffs,
             extra={
                 "hoa_fees": hoa_fees,
                 "principal_payments": actual_principal_payments,
@@ -324,6 +321,8 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
                 "sale_closing_costs": sale_closing_costs,
                 "cumulative_real_appreciation": cumulative_real_appreciation,
                 "cumulative_inflation": cumulative_inflation,
+                "layoff_durations": life_results.extra["layoff_durations"],
+                "layoff_mask": life_results.extra["layoff_mask"],
                 "divorce_costs": life_results.extra["divorce_costs"],
             },
         )

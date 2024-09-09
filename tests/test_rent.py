@@ -10,9 +10,10 @@ mpl.use("Agg")
 from openpyxl import load_workbook
 
 from nyc_home_cost_calculator.rent import NYCRentalCostCalculator
+from nyc_home_cost_calculator.simulate import SimulationResults
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def calculator() -> NYCRentalCostCalculator:
     return NYCRentalCostCalculator(
         initial_rent=3_000.0,
@@ -31,6 +32,11 @@ def calculator() -> NYCRentalCostCalculator:
     )
 
 
+@pytest.fixture(scope="session")
+def results(calculator: NYCRentalCostCalculator) -> SimulationResults:
+    return calculator.simulate()
+
+
 def test_initialization(calculator: NYCRentalCostCalculator) -> None:
     assert calculator.initial_rent == 3_000.0
     assert calculator.lease_term == 1
@@ -47,29 +53,29 @@ def test_initialization(calculator: NYCRentalCostCalculator) -> None:
     assert calculator.rng is not None
 
 
-def test_simulate_costs_over_time(calculator: NYCRentalCostCalculator) -> None:
-    costs = calculator.simulate().profit_loss
+def test_simulate_costs_over_time(calculator: NYCRentalCostCalculator, results: SimulationResults) -> None:
+    costs = results.profit_loss
     assert costs is not None
-    assert len(costs) == (12 * calculator.total_years), costs.shape
+    assert len(costs) == (12 * results.total_years), costs.shape
     assert all(len(year_costs) == calculator.simulations for year_costs in costs), costs.shape
 
 
-def test_get_cost_statistics(calculator: NYCRentalCostCalculator) -> None:
-    stats = calculator.get_cost_statistics()
+def test_get_cost_statistics(results: SimulationResults) -> None:
+    stats = results.get_cost_statistics()
     expected_keys = ["mean", "median", "std_dev", "percentile_5", "percentile_95"]
     assert all(key in stats for key in expected_keys)
     assert all(isinstance(value, float) for value in stats.values())
 
 
 @patch("matplotlib.pyplot.show")
-def test_plot_costs_over_time(mock_show: Any, calculator: NYCRentalCostCalculator) -> None:
-    calculator.plot()
+def test_plot_costs_over_time(mock_show: Any, results: SimulationResults) -> None:
+    results.plot()
     mock_show.assert_called_once()
 
 
-def test_export_to_excel(calculator: NYCRentalCostCalculator, tmp_path: Path) -> None:
+def test_export_to_excel(results: SimulationResults, tmp_path: Path) -> None:
     filename = tmp_path / "test_export.xlsx"
-    calculator.export_to_excel(str(filename))
+    results.export_to_excel(str(filename))
     assert filename.exists()
 
     # Check if the file is a valid Excel file

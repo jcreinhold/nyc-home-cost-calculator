@@ -14,12 +14,11 @@ nbconvert
 notebook
 
 # Data analysis and visualization
-pandas
-numpy
 seaborn
 
 # Type stubs for better type checking
 types-requests
+pandas-stubs
 
 # Optional: for advanced Jupyter features
 jupyter-lsp

@@ -88,12 +88,21 @@ class FinancialLifeSimulator(AbstractSimulatorBase):
         return SimulationResults(
             monthly_costs=household_income / 12.0,
             profit_loss=np.cumsum(household_income / 12.0, axis=0),
+            total_years=self.total_years,
+            simulations=self.career_simulator.simulations,
             monthly_income=household_income / 12.0,
             personal_income=personal_income,
             partner_income=partner_income,
             household_income=household_income,
             marital_status=marital_status,
-            extra={"divorce_costs": divorce_costs},
+            promotions=career_results.promotions,
+            demotions=career_results.demotions,
+            layoffs=career_results.layoffs,
+            extra={
+                "layoff_durations": career_results.extra["layoff_durations"],
+                "layoff_mask": career_results.extra["layoff_mask"],
+                "divorce_costs": divorce_costs,
+            },
         )
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:

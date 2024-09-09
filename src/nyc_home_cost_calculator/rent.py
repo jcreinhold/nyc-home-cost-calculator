@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from nyc_home_cost_calculator.base import AbstractNYCCostCalculator, LocScaleRV
+from nyc_home_cost_calculator.base import AbstractNYCCostCalculator
 from nyc_home_cost_calculator.simulate import SimulationResults
+from nyc_home_cost_calculator.utils import NormalRV
 
 
 class NYCRentalCostCalculator(AbstractNYCCostCalculator):
@@ -73,8 +74,8 @@ class NYCRentalCostCalculator(AbstractNYCCostCalculator):
         self.move_probability = move_probability
         self.rent_increase_move_threshold = rent_increase_move_threshold
 
-        self.rent_increase_rate = LocScaleRV(self.mean_rent_increase_rate, self.rent_increase_volatility, self.rng)
-        self.inflation_rate = LocScaleRV(self.mean_inflation_rate, self.inflation_volatility, self.rng)
+        self.rent_increase_rate = NormalRV(self.mean_rent_increase_rate, self.rent_increase_volatility, rng=self.rng)
+        self.inflation_rate = NormalRV(self.mean_inflation_rate, self.inflation_volatility, rng=self.rng)
 
     def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
         total_months, num_simulations = shape = months.shape
@@ -143,7 +144,12 @@ class NYCRentalCostCalculator(AbstractNYCCostCalculator):
         # Add initial move-in costs
         cumulative_costs += self.moving_cost + (self.initial_rent * 12 * self.broker_fee_rate)
 
-        return SimulationResults(monthly_costs=monthly_costs, profit_loss=-cumulative_costs)
+        return SimulationResults(
+            monthly_costs=monthly_costs,
+            profit_loss=-cumulative_costs,
+            total_years=self.total_years,
+            simulations=self.simulations,
+        )
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:
         return [

@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
 
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import ticker
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
+from nyc_home_cost_calculator.utils import calculate_confidence_intervals
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,6 +30,8 @@ class SimulationResults:
     # Common fields
     monthly_costs: np.ndarray
     profit_loss: np.ndarray
+    total_years: int
+    simulations: int
 
     # Home ownership specific
     home_values: np.ndarray | None = None
@@ -56,10 +68,15 @@ class SimulationResults:
     # Additional fields for flexibility
     extra: dict = field(default_factory=dict)
 
+    # Internal field for recording input parameters
+    _input_parameters: list[tuple[str, Any]] = field(default_factory=list)
+
     def __repr__(self):
         """Provide a concise representation of the SimulationResults."""
         fields = [
-            f"{k}={v.shape if isinstance(v, np.ndarray) else v}" for k, v in asdict(self).items() if v is not None
+            f"{k}={v.shape if isinstance(v, np.ndarray) else v}"
+            for k, v in asdict(self).items()
+            if v is not None and not k.startswith("_")
         ]
         return f"SimulationResults({', '.join(fields)})"
 
@@ -190,6 +207,202 @@ class SimulationResults:
             else:
                 zero_dict[_field] = None
         return cls(**zero_dict)
+
+    def get_cost_statistics(self) -> dict[str, float]:
+        """Calculate summary statistics of the simulated costs.
+
+        This method runs the cost simulations and computes various statistical measures
+        based on the final year's profit/loss values across all simulations.
+
+        Returns:
+            A dictionary containing the following statistics:
+                - mean: Average profit/loss
+                - median: Median profit/loss
+                - std_dev: Standard deviation of profit/loss
+                - percentile_5: 5th percentile of profit/loss
+                - percentile_95: 95th percentile of profit/loss
+        """
+        profit_loss = self.profit_loss
+
+        if profit_loss is None:
+            msg = "Could not find 'profit_loss'."
+            raise ValueError(msg)
+
+        final_year_costs = profit_loss[-1]
+
+        return {
+            "mean": final_year_costs.mean(),
+            "median": np.quantile(final_year_costs, 0.5),
+            "std_dev": np.std(final_year_costs, ddof=1),
+            "percentile_5": np.quantile(final_year_costs, 0.05),
+            "percentile_95": np.quantile(final_year_costs, 0.95),
+        }
+
+    def plot(
+        self,
+        *,
+        figsize: tuple[int, int] = (12, 6),
+        title: str = "Projected Costs Over Time",
+        ylabel: str = "Cost ($)",
+        label: str = "Average Cost",
+    ) -> None:
+        """Plot the projected profit/loss over time with confidence intervals.
+
+        This method generates a line plot showing the average profit/loss for each month
+        of the loan term, along with a 95% confidence interval. It also includes a
+        break-even line for reference.
+
+        Args:
+            figsize: A tuple specifying the figure size in inches (width, height).
+            title: The title of the plot.
+            ylabel: The label for the y-axis.
+            label: The label for the average cost line.
+        """
+        profit_loss = self.profit_loss
+
+        if profit_loss is None:
+            msg = "Could not find cumulative costs."
+            raise ValueError(msg)
+
+        years = np.array(list(range(1, (12 * self.total_years) + 1))) / 12
+        avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss)
+
+        plt.figure(figsize=figsize)
+        plt.plot(years, avg_costs, label=label)
+        plt.fill_between(years, lower_bound, upper_bound, alpha=0.2, label="95% Confidence Interval")
+
+        plt.title(title)
+        plt.xlabel("Years")
+        plt.ylabel(ylabel)
+        plt.legend()
+        plt.grid(visible=True)
+
+        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+        plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(1))
+        plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}"))
+        plt.gca().xaxis.set_minor_locator(ticker.MultipleLocator(0.25))
+
+        plt.tight_layout()
+        plt.show()
+
+    def export_to_excel(self, filename: str) -> None:  # noqa: C901, PLR0912, PLR0915
+        """Export simulation results and input parameters to an Excel file.
+
+        This method creates a formatted Excel workbook with three main sections:
+        1. Input Parameters
+        2. Cost Statistics
+        3. Profit/Loss Over Time
+
+        Args:
+            filename: The name of the Excel file to be created.
+        """
+        profit_loss = self.profit_loss
+
+        if profit_loss is None:
+            msg = "Could not find 'profit_loss'."
+            raise ValueError(msg)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Cost Summary"
+
+        # Define styles
+        header_font = Font(bold=True, size=12)
+        title_font = Font(bold=True, size=14)
+        header_fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+        border = Border(
+            left=Side(style="thin"), right=Side(style="thin"), top=Side(style="thin"), bottom=Side(style="thin")
+        )
+        alignment = Alignment(horizontal="center", vertical="center")
+
+        # Input Parameters section
+        ws["A1"] = "Input Parameters"
+        ws["A1"].font = title_font
+        ws.merge_cells("A1:B1")
+        ws["A1"].alignment = alignment
+
+        headers = ["Parameter", "Value"]
+        ws.append(headers)
+        for cell in ws[2]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = alignment
+            cell.border = border
+
+        params = self._input_parameters
+        for param in params:
+            ws.append(param)
+
+        for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=2):
+            for cell in row:
+                cell.border = border
+                cell.alignment = alignment
+
+        # Cost Statistics section
+        start_row = ws.max_row + 2
+        ws[f"A{start_row}"] = "Cost Statistics"
+        ws[f"A{start_row}"].font = title_font
+        ws.merge_cells(f"A{start_row}:B{start_row}")
+        ws[f"A{start_row}"].alignment = alignment
+
+        ws.append(["Statistic", "Value"])
+        for cell in ws[start_row + 1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = alignment
+            cell.border = border
+
+        cost_stats = self.get_cost_statistics()
+        for stat, value in cost_stats.items():
+            ws.append([stat.capitalize(), f"${value:,.2f}"])
+
+        for row in ws.iter_rows(min_row=start_row + 2, max_row=ws.max_row, min_col=1, max_col=2):
+            for cell in row:
+                cell.border = border
+                cell.alignment = alignment
+
+        # Costs Over Time section
+        start_row = ws.max_row + 2
+        ws[f"A{start_row}"] = "Costs Over Time"
+        ws[f"A{start_row}"].font = title_font
+        ws.merge_cells(f"A{start_row}:D{start_row}")
+        ws[f"A{start_row}"].alignment = alignment
+
+        time_headers = ["Month", "Average Cost", "Lower 95% CI", "Upper 95% CI"]
+        ws.append(time_headers)
+        for cell in ws[start_row + 1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = alignment
+            cell.border = border
+
+        months = list(range(1, (12 * self.total_years) + 1))
+        avg_costs, ci_lower, ci_upper = calculate_confidence_intervals(profit_loss)
+
+        for month, avg, lower, upper in zip(months, avg_costs, ci_lower, ci_upper, strict=True):
+            ws.append([month, f"${avg:,.2f}", f"${avg+lower:,.2f}", f"${avg+upper:,.2f}"])
+
+        for row in ws.iter_rows(min_row=start_row + 2, max_row=ws.max_row, min_col=1, max_col=4):
+            for cell in row:
+                cell.border = border
+                cell.alignment = alignment
+
+        # Adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column[0].column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(cell.value)
+                except (AttributeError, TypeError) as e:
+                    logger.debug("Error: %s", e)
+            adjusted_width = max_length + 2
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+        # Save the workbook
+        wb.save(filename)
+        logger.info("Data exported to '%s'", filename)
 
 
 class SimulationEngine:

@@ -1,5 +1,7 @@
 # Core dependencies
 matplotlib
+numpy
 openpyxl 
+pandas
 scipy
-tqdm
+yfinance[nospam,repair]

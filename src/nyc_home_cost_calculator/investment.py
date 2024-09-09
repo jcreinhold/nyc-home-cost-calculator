@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from scipy import stats
 
-from nyc_home_cost_calculator.base import AbstractNYCCostCalculator
+from nyc_home_cost_calculator.base import AbstractSimulatorBase
 from nyc_home_cost_calculator.simulate import SimulationResults
 
+if TYPE_CHECKING:
+    from typing import Any
 
-class InvestmentCalculator(AbstractNYCCostCalculator):
+    from nyc_home_cost_calculator.portfolio import Portfolio
+
+
+class InvestmentCalculator(AbstractSimulatorBase):
     """Calculates investment-related costs for NYC."""
 
     def __init__(
@@ -35,14 +42,7 @@ class InvestmentCalculator(AbstractNYCCostCalculator):
             simulations: The number of simulations to run. Defaults to 5_000.
             rng: The random number generator. Defaults to None.
         """
-        super().__init__(
-            initial_cost=initial_investment,
-            total_years=total_years,
-            mean_inflation_rate=0,  # Not used in this class
-            inflation_volatility=0,  # Not used in this class
-            simulations=simulations,
-            rng=rng,
-        )
+        super().__init__(total_years=total_years, simulations=simulations, rng=rng)
         self.initial_investment = initial_investment
         self.monthly_contribution = monthly_contribution
         self.mean_return_rate = mean_return_rate
@@ -53,16 +53,23 @@ class InvestmentCalculator(AbstractNYCCostCalculator):
         total_months, num_simulations = shape = months.shape
 
         # Generate monthly returns using Student's t-distribution
-        monthly_returns = stats.t.rvs(
-            df=self.degrees_of_freedom,
-            loc=self.mean_return_rate / 12.0,
-            scale=self.volatility / np.sqrt(12.0),
-            size=shape,
-            random_state=self.rng,
-        )
+        if self.volatility == 0.0:
+            # Handle zero volatility case
+            monthly_log_returns = np.full(shape, np.log1p(self.mean_return_rate / 12))
+        else:
+            monthly_log_returns = stats.t.rvs(
+                df=self.degrees_of_freedom,
+                loc=np.log1p(self.mean_return_rate / 12.0) - 0.5 * (self.volatility / np.sqrt(12.0)) ** 2,
+                scale=self.volatility / np.sqrt(12.0),
+                size=shape,
+                random_state=self.rng,
+            )
 
         # Calculate cumulative returns
-        cumulative_returns = np.cumprod(1 + monthly_returns, axis=0)
+        cumulative_log_returns = np.cumsum(monthly_log_returns, axis=0)
+
+        # Convert log returns to simple returns
+        cumulative_returns = np.expm1(cumulative_log_returns)
 
         # Create a matrix of monthly contributions
         contributions = np.full(shape, self.monthly_contribution)
@@ -70,25 +77,11 @@ class InvestmentCalculator(AbstractNYCCostCalculator):
 
         # Calculate portfolio values
         portfolio_values = np.zeros(shape)
-        portfolio_values[0] = self.initial_investment
+        portfolio_values[0] = self.initial_investment * np.exp(monthly_log_returns[0])
 
         # Vectorized calculation of portfolio values
-        portfolio_values[1:] = (
-            self.initial_investment * cumulative_returns[1:]
-            + self.monthly_contribution
-            * (cumulative_returns[1:] * np.cumprod(1 + monthly_returns[:-1], axis=0) - 1.0)
-            / monthly_returns[:-1]
-        )
-
-        # Handle the case where monthly return is zero
-        zero_returns = monthly_returns[:-1] == 0.0
-        if np.any(zero_returns):
-            contribution_periods = np.arange(1, total_months)[:, np.newaxis]
-            portfolio_values[1:] = np.where(
-                zero_returns,
-                self.initial_investment * cumulative_returns[1:] + self.monthly_contribution * contribution_periods,
-                portfolio_values[1:],
-            )
+        for i in range(1, total_months):
+            portfolio_values[i] = (portfolio_values[i - 1] + self.monthly_contribution) * np.exp(monthly_log_returns[i])
 
         # Calculate cumulative contributions
         cumulative_contributions = np.cumsum(contributions, axis=0)
@@ -96,10 +89,12 @@ class InvestmentCalculator(AbstractNYCCostCalculator):
         return SimulationResults(
             monthly_costs=-contributions,
             profit_loss=portfolio_values - cumulative_contributions,
+            total_years=self.total_years,
+            simulations=self.simulations,
             portfolio_values=portfolio_values,
             investment_returns=cumulative_returns,
             extra={
-                "monthly_returns": monthly_returns,
+                "monthly_log_returns": monthly_log_returns,
             },
         )
 
@@ -113,3 +108,34 @@ class InvestmentCalculator(AbstractNYCCostCalculator):
             ("Degrees of Freedom", f"{self.degrees_of_freedom}"),
             ("Number of Simulations", f"{self.simulations}"),
         ]
+
+    @classmethod
+    def from_portfolio(cls, portfolio: Portfolio, **kwargs: Any) -> InvestmentCalculator:
+        """Initialize InvestmentCalculator from a Portfolio instance.
+
+        Args:
+            portfolio: A Portfolio instance.
+            **kwargs: Additional keyword arguments to override default parameters.
+
+        Returns:
+            An instance of InvestmentCalculator initialized with portfolio data.
+        """
+        # Calculate annualized return and volatility from portfolio data
+        returns = portfolio.metrics["arithmetic_mean"]
+        volatility = portfolio.metrics["volatility"]
+
+        # Set default parameters
+        params = {
+            "initial_investment": portfolio.data.iloc[0].sum(),
+            "monthly_contribution": 0.0,  # Assume no additional contributions by default
+            "total_years": len(portfolio.data) // 252,  # Assuming 252 trading days per year
+            "mean_return_rate": returns,
+            "volatility": volatility,
+            "degrees_of_freedom": 5,  # Default value, can be overridden
+            "simulations": 5_000,  # Default value, can be overridden
+        }
+
+        # Override defaults with any provided kwargs
+        params.update(kwargs)
+
+        return cls(**params)

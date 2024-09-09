@@ -7,9 +7,10 @@ import pytest
 mpl.use("Agg")
 
 from nyc_home_cost_calculator.home import FilingStatus, NYCHomeCostCalculator
+from nyc_home_cost_calculator.simulate import SimulationResults
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def default_calculator() -> NYCHomeCostCalculator:
     return NYCHomeCostCalculator(
         home_price=1_000_000,
@@ -32,6 +33,11 @@ def default_calculator() -> NYCHomeCostCalculator:
         simulations=100,
         rng=np.random.default_rng(42),
     )
+
+
+@pytest.fixture(scope="session")
+def default_results(default_calculator: NYCHomeCostCalculator) -> SimulationResults:
+    return default_calculator.simulate()
 
 
 def test_initialization(default_calculator: NYCHomeCostCalculator) -> None:
@@ -59,28 +65,30 @@ def test_calculate_monthly_payment(default_calculator: NYCHomeCostCalculator) ->
     assert 3_000 < payment < 4_000  # Reasonable range for given parameters
 
 
-def test_simulate_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    costs = default_calculator.simulate().cumulative_costs
+def test_simulate_costs_over_time(
+    default_calculator: NYCHomeCostCalculator, default_results: SimulationResults
+) -> None:
+    costs = default_results.cumulative_costs
     assert costs is not None
     assert len(costs) == (12 * default_calculator.loan_term), costs.shape
     assert len(costs[0]) == default_calculator.simulations, costs.shape
     assert all(isinstance(cost, float) for year_costs in costs for cost in year_costs)
 
 
-def test_get_cost_statistics(default_calculator: NYCHomeCostCalculator) -> None:
-    stats = default_calculator.get_cost_statistics()
+def test_get_cost_statistics(default_results: SimulationResults) -> None:
+    stats = default_results.get_cost_statistics()
     assert set(stats.keys()) == {"mean", "median", "std_dev", "percentile_5", "percentile_95"}
     assert all(isinstance(value, float) for value in stats.values())
 
 
 @pytest.mark.mpl_image_compare(tolerance=10, savefig_kwargs={"dpi": 300})
-def test_plot_costs_over_time(default_calculator: NYCHomeCostCalculator) -> None:
-    default_calculator.plot()
+def test_plot_costs_over_time(default_results: SimulationResults) -> None:
+    default_results.plot()
 
 
-def test_export_to_excel(default_calculator: NYCHomeCostCalculator, tmp_path: Path) -> None:
+def test_export_to_excel(default_results: SimulationResults, tmp_path: Path) -> None:
     filename = tmp_path / "test_export.xlsx"
-    default_calculator.export_to_excel(str(filename))
+    default_results.export_to_excel(str(filename))
     assert filename.exists()
 
 
@@ -106,7 +114,8 @@ def test_edge_cases() -> None:
         filing_status=FilingStatus.MARRIED_JOINT,
         simulations=100,
     )
-    stats = calculator.get_cost_statistics()
+    results = calculator.simulate()
+    stats = results.get_cost_statistics()
     assert all(isinstance(value, float) for value in stats.values())
 
     # Test with very high appreciation and income growth
@@ -130,5 +139,6 @@ def test_edge_cases() -> None:
         filing_status=FilingStatus.MARRIED_SEPARATE,
         simulations=100,
     )
-    stats = calculator.get_cost_statistics()
+    results = calculator.simulate()
+    stats = results.get_cost_statistics()
     assert all(isinstance(value, float) for value in stats.values())

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from dataclasses import KW_ONLY, dataclass, field
+
 import numpy as np
 from scipy import stats
 
@@ -42,3 +45,48 @@ def calculate_confidence_intervals(
     upper_bound = mean + margin_of_error
 
     return mean, lower_bound, upper_bound
+
+
+@dataclass
+class LocScaleShapeRV(ABC):
+    """Abstract base class for generating random samples given a location, scale, and shape."""
+
+    loc: float
+    scale: float
+    _: KW_ONLY
+    shape: float | None = None
+    rng: np.random.Generator | None = None
+
+    def __post_init__(self):
+        """Initialize the random number generator."""
+        self.rng = self.rng or np.random.default_rng()
+
+    @abstractmethod
+    def __call__(self, shape: tuple[int, ...]) -> np.ndarray:
+        """Generate a random sample from a location-scale distribution."""
+
+
+@dataclass
+class NormalRV(LocScaleShapeRV):
+    """Generating random samples from a normal distribution given a mean and stddev."""
+
+    def __call__(self, shape: tuple[int, ...]) -> np.ndarray:
+        """Generate a random sample from a normal distribution."""
+        if self.rng is None:
+            msg = "Random number generator is not initialized."
+            raise ValueError(msg)
+        return self.rng.normal(self.loc, self.scale, shape)
+
+
+@dataclass
+class StudentTRV(LocScaleShapeRV):
+    """Generating random samples from a Student's t-distribution given a location, scale, and degrees of freedom."""
+
+    shape: int = field(kw_only=True, default=3)
+
+    def __call__(self, shape: tuple[int, ...]) -> np.ndarray:
+        """Generate a random sample from a Student's t-distribution."""
+        if self.rng is None:
+            msg = "Random number generator is not initialized."
+            raise ValueError(msg)
+        return self.rng.standard_t(df=self.shape, size=shape) * self.scale + self.loc

@@ -41,6 +41,7 @@ coverage: activate  ## Run tests and generate coverage report
 
 format: activate  ## Format code with Ruff
 	$(BIN)/ruff format notebooks src tests
+	$(BIN)/ruff check --fix notebooks src tests
 
 lint: activate  ## Run Ruff linter
 	$(BIN)/ruff check notebooks src tests

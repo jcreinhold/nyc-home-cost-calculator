@@ -9,6 +9,8 @@ def sample_results() -> SimulationResults:
     return SimulationResults(
         monthly_costs=np.array([[100.0, 200.0], [150.0, 250.0]]),
         profit_loss=np.array([[1000.0, 2000.0], [1500.0, 2500.0]]),
+        total_years=2,
+        simulations=2,
         home_values=np.array([[300000.0, 350000.0], [310000.0, 360000.0]]),
         personal_income=np.array([[5000.0, 6000.0], [5100.0, 6100.0]]),
         marital_status=np.array([[0, 1], [0, 1]]),
@@ -81,7 +83,10 @@ def test_simulation_engine_initialization(sample_engine: SimulationEngine) -> No
 def test_simulation_engine_run_simulation(sample_engine: SimulationEngine) -> None:
     def mock_simulate(months: np.ndarray) -> SimulationResults:
         return SimulationResults(
-            monthly_costs=np.ones_like(months), profit_loss=np.cumsum(np.ones_like(months), axis=0)
+            monthly_costs=np.ones_like(months),
+            profit_loss=np.cumsum(np.ones_like(months), axis=0),
+            total_years=10,
+            simulations=1000,
         )
 
     results = sample_engine.run_simulation(mock_simulate)

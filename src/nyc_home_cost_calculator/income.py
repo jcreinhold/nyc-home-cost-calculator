@@ -114,6 +114,8 @@ class CareerIncomeSimulator(AbstractSimulatorBase):
         return SimulationResults(
             monthly_costs=np.zeros_like(income),  # No costs in this simulation
             profit_loss=np.cumsum(income, axis=0),  # Treating income as "profit"
+            total_years=self.total_years,
+            simulations=self.simulations,
             personal_income=income,
             monthly_income=monthly_income,
             promotions=promotions,
