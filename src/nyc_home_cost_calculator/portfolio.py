@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple, cast
 
+import matplotlib as mpl
+import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from matplotlib.transforms import Bbox
 from scipy import stats
 
 from nyc_home_cost_calculator.measures import (
@@ -62,7 +65,7 @@ class Portfolio:
             raise ValueError(msg)
 
         if initial_investments is not None:
-            self.initial_investments = np.asarray(initial_investments)
+            self.initial_investments = np.asanyarray(initial_investments)
             total_investment = self.initial_investments.sum()
             self.weights = self.initial_investments / total_investment
         else:
@@ -70,7 +73,7 @@ class Portfolio:
             if not np.isclose(self.weights.sum(), 1.0, rtol=1e-5):
                 msg = "Weights must sum to 1.0"
                 raise ValueError(msg)
-            self.initial_investments = self.weights * 100_000
+            self.initial_investments = self.weights * 100_000.0
 
         self.period = period
         self.price = price
@@ -91,7 +94,7 @@ class Portfolio:
         return (self.returns * self.weights).sum(axis=1)
 
     def _calculate_dollar_returns(self) -> pd.Series:
-        cumulative_returns = (1 + self.returns).cumprod()
+        cumulative_returns = (1.0 + self.returns).cumprod()
         dollar_returns = cumulative_returns * self.initial_investments
         return dollar_returns.sum(axis=1) - self.initial_investments.sum()
 
@@ -138,16 +141,6 @@ class Portfolio:
         upper_triangle = np.triu(corr_matrix.values, k=1)
         # Calculate mean of non-zero elements
         return np.mean(upper_triangle[upper_triangle != 0])
-
-    def plot_returns(self, *, figsize: tuple[int, int] = (10, 6)) -> None:
-        """Plot the cumulative returns of the portfolio."""
-        cum_returns = (1.0 + self.weighted_returns).cumprod()
-        plt.figure(figsize=figsize)
-        plt.plot(cum_returns.index, cum_returns.to_numpy())
-        plt.title("Portfolio Cumulative Returns")
-        plt.xlabel("Date")
-        plt.ylabel("Cumulative Return")
-        plt.show()
 
     def compare(self, other: Portfolio, *, significance_level: float = 0.05) -> dict[str, TestResult]:
         """Compare the metrics of this portfolio with another portfolio.
@@ -199,6 +192,71 @@ class Portfolio:
                 results.append(f"{_metric}: {result.diff:.4f} (Statistical significance not applicable)")
         return "\n".join(results)
 
+    def plot_returns(self, *, figsize: tuple[int, int] = (10, 6)) -> tuple[plt.Figure, plt.Axes]:
+        """Plot the cumulative returns of the portfolio."""
+        cum_returns = (1.0 + self.weighted_returns).cumprod()
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.plot(cum_returns.index, cum_returns.to_numpy())
+        ax.set_title("Portfolio Cumulative Returns")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Cumulative Return")
+        return fig, ax
+
+    def plot_portfolio(
+        self, metrics: list[str] | None = None, *, figsize: tuple[int, int] = (15, 10)
+    ) -> tuple[plt.Figure, np.ndarray]:
+        """Create a comprehensive plot of the portfolio's performance and metrics.
+
+        Args:
+            metrics: List of metrics to plot. If None, plots all available metrics.
+            figsize: Size of the figure (width, height) in inches.
+
+        Returns:
+            A tuple containing the Figure and ndarray of Axes.
+        """
+        if metrics is None:
+            metrics = list(self.metrics.keys())
+
+        fig, axs = plt.subplots(3, 2, figsize=figsize)
+        fig.suptitle(f"Portfolio Analysis: {', '.join(self.tickers)}", fontsize=16)
+
+        # Plot cumulative returns
+        cum_returns = (1.0 + self.weighted_returns).cumprod()
+        axs[0, 0].plot(cum_returns.index, cum_returns)
+        axs[0, 0].set_title("Cumulative Returns")
+        axs[0, 0].set_xlabel("Date")
+        axs[0, 0].set_ylabel("Cumulative Return")
+
+        # Plot rolling volatility
+        rolling_vol = self.weighted_returns.rolling(window=30).std() * np.sqrt(252.0)
+        axs[0, 1].plot(rolling_vol.index, rolling_vol)
+        axs[0, 1].set_title("30-Day Rolling Volatility (Annualized)")
+        axs[0, 1].set_xlabel("Date")
+        axs[0, 1].set_ylabel("Volatility")
+
+        # Plot drawdowns
+        drawdowns = (cum_returns / cum_returns.cummax()) - 1.0
+        axs[1, 0].fill_between(drawdowns.index, drawdowns, 0, alpha=0.3)
+        axs[1, 0].set_title("Drawdowns")
+        axs[1, 0].set_xlabel("Date")
+        axs[1, 0].set_ylabel("Drawdown")
+
+        # Plot returns distribution
+        axs[1, 1].hist(self.weighted_returns, bins=50, density=True, alpha=0.7)
+        axs[1, 1].set_title("Returns Distribution")
+        axs[1, 1].set_xlabel("Return")
+        axs[1, 1].set_ylabel("Frequency")
+
+        # Plot asset allocation
+        _ = _plot_treemap(self.weights, self.tickers, ax=axs[2, 0])
+        axs[2, 0].set_title("Asset Allocation")
+
+        # Plot key metrics as a table
+        _ = _plot_table(self.metrics, ax=axs[2, 1])
+
+        fig.tight_layout()
+        return fig, axs
+
 
 class TestResult(NamedTuple):
     """Represents the result of a statistical test."""
@@ -216,3 +274,136 @@ class TestResult(NamedTuple):
         if self.is_significant:
             return f"Significant at {self.significance_level} level (p-value: {self.p_value:.4f})"
         return f"Not significant (p-value: {self.p_value:.4f})"
+
+
+def _clean_metric_name(name: str) -> str:
+    if name == "var_95":
+        return "VaR 95"
+    if name == "es_95":
+        return "ES 95"
+    if name in {"twr", "irr"}:
+        return name.upper()
+    return name.replace("_", " ").title()
+
+
+def _format_metric_value(name: str, value: float) -> str:
+    percentage_metrics = {"arithmetic_mean", "geometric_mean", "twr", "irr", "maximum_drawdown", "var_95", "es_95"}
+    if name in percentage_metrics:
+        return f"{value:.2%}"
+    dollar_metrics = {"final_dollar_return"}
+    if name in dollar_metrics:
+        return f"${value:,.2f}"
+    return f"{value:.4f}"
+
+
+def _squarify(sizes: Sequence[float], x: float, y: float, width: float, height: float) -> list[dict[str, float]]:
+    if len(sizes) == 0:
+        return []
+
+    total = sum(sizes)
+    sizes = [size / total * width * height for size in sizes]
+
+    rectangles = []
+    while sizes:
+        rect = {"x": x, "y": y}
+        if width < height:
+            rect["dx"] = width
+            rect["dy"] = sizes[0] / width
+            y += rect["dy"]
+            height -= rect["dy"]
+        else:
+            rect["dy"] = height
+            rect["dx"] = sizes[0] / height
+            x += rect["dx"]
+            width -= rect["dx"]
+        rectangles.append(rect)
+        sizes.pop(0)
+        if len(sizes) > 0:
+            sizes = [size * (width * height) / sum(sizes) for size in sizes]
+
+    return rectangles
+
+
+def _plot_treemap(sizes: Sequence[float], labels: Sequence[str], ax: plt.Axes | None = None) -> plt.Axes:
+    if ax is None:
+        _, ax = plt.subplots()
+
+    rectangles = _squarify(sizes, 0, 0, 100, 100)
+    viridis = mpl.colormaps["viridis"].resampled(8)
+    colors = viridis(np.linspace(0, 1, len(sizes)))
+
+    for rect, label, color in zip(rectangles, labels, colors, strict=True):
+        ax.add_patch(plt.Rectangle((rect["x"], rect["y"]), rect["dx"], rect["dy"], facecolor=color))
+
+        # Calculate font size based on rectangle size
+        font_size = min(rect["dx"], rect["dy"]) / 4
+
+        # Text with outline
+        text = f"{label}\n{sizes[labels.index(label)]:.2%}"
+        x, y = rect["x"] + rect["dx"] / 2, rect["y"] + rect["dy"] / 2
+
+        # White outline
+        ax.text(
+            x,
+            y,
+            text,
+            ha="center",
+            va="center",
+            wrap=True,
+            color="white",
+            fontsize=font_size + 1,
+            fontweight="bold",
+            path_effects=[path_effects.withStroke(linewidth=3, foreground="black")],
+        )
+
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.set_axis_off()
+
+    return ax
+
+
+def _plot_table(metrics: dict[str, float], ax: plt.Axes | None = None) -> plt.Axes:
+    if ax is None:
+        _, ax = plt.subplots()
+    metric_names = [_clean_metric_name(m) for m in metrics]
+    metric_values = [_format_metric_value(m, v) for m, v in metrics.items()]
+
+    # Split metrics into two rows if there are more than 5
+    if len(metrics) > 5:
+        mid = len(metrics) // 2
+        metric_names_rows = [metric_names[:mid], metric_names[mid:]]
+        metric_values_rows = [metric_values[:mid], metric_values[mid:]]
+    else:
+        metric_names_rows = [metric_names]
+        metric_values_rows = [metric_values]
+
+    ax.axis("tight")
+    ax.axis("off")
+
+    table_height = 0.4 if len(metrics) > 5 else 0.2
+    y_offset = 0.1
+
+    for i, (names, values) in enumerate(zip(metric_names_rows, metric_values_rows, strict=True)):
+        table = ax.table(
+            cellText=[values],
+            colLabels=names,
+            cellLoc="center",
+            loc="center",
+            bbox=Bbox.from_bounds(0, 1 - (i + 1) * table_height - y_offset, 1, table_height),
+        )
+
+        table.auto_set_font_size(value=False)
+        table.set_fontsize(9)
+        table.auto_set_column_width(col=list(range(len(names))))
+
+        # Apply color and style
+        for (row, _), cell in table.get_celld().items():
+            if row == 0:
+                cell.set_text_props(weight="bold", color="white")
+                cell.set_facecolor("#4472C4")
+            else:
+                cell.set_facecolor("#E9EDF4")
+
+    ax.set_title("Key Metrics", fontweight="bold", y=1.1)
+    return ax
