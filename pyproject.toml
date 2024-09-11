@@ -89,7 +89,17 @@ select = [
     "DOC",  # pydoclint
     "RUF",  # Ruff-specific rules
 ]
-ignore = ["ANN101", "ANN102", "ANN204", "ANN401", "COM812", "PLR2004", "ISC001", "RUF002"]
+ignore = [
+    "ANN101",
+    "ANN102",
+    "ANN204",
+    "ANN401",
+    "COM812",
+    "ISC001",
+    "PD901",
+    "PLR2004",
+    "RUF002",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from nyc_home_cost_calculator.simulate import SimulationEngine, SimulationResults
@@ -104,3 +105,30 @@ def test_simulation_results_invalid_field(sample_results: SimulationResults) -> 
 def test_simulation_results_invalid_addition(sample_results: SimulationResults) -> None:
     with pytest.raises(TypeError):
         sample_results + 5  # type: ignore[operator]
+
+
+def test_simulation_results_to_dataframe() -> None:
+    # Create a sample SimulationResults object
+    results = SimulationResults(
+        monthly_costs=np.array([[100, 200], [150, 250], [200, 300]]),
+        profit_loss=np.array([[-50, -100], [50, 100], [150, 200]]),
+        total_years=0.25,  # 3 months
+        simulations=2,
+        home_values=np.array([[300000, 310000], [320000, 330000], [340000, 350000]]),
+        extra={"nested": {"value": 42, "array": np.array([1, 2, 3])}},
+    )
+
+    # Convert to DataFrame
+    df = results.to_dataframe()
+
+    # Assertions
+    assert isinstance(df, pd.DataFrame)
+    assert len(df) == 3  # Three time steps
+    assert isinstance(df.index, pd.DatetimeIndex)
+    assert "monthly_costs" in df.columns
+    assert "profit_loss" in df.columns
+    assert "home_values" in df.columns
+    assert "total_years" in df.columns
+    assert "simulations" in df.columns
+    assert "extra_nested_value" in df.columns
+    assert "extra_nested_array" in df.columns

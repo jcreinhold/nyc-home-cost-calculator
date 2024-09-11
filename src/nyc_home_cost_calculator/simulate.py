@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import datetime
 import logging
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib import ticker
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -30,7 +32,7 @@ class SimulationResults:
     # Common fields
     monthly_costs: np.ndarray
     profit_loss: np.ndarray
-    total_years: int
+    total_years: float | int
     simulations: int
 
     # Home ownership specific
@@ -76,7 +78,7 @@ class SimulationResults:
         fields = [
             f"{k}={v.shape if isinstance(v, np.ndarray) else v}"
             for k, v in asdict(self).items()
-            if v is not None and not k.startswith("_")
+            if v is not None and not k.startswith("_") and k != "extra"
         ]
         return f"SimulationResults({', '.join(fields)})"
 
@@ -175,10 +177,12 @@ class SimulationResults:
             msg = f"Unsupported operand type for SimulationResults: {type(other)}"
             raise TypeError(msg)
 
-        def _combine_arrays(a: T, b: T) -> T | dict | None:
+        def _combine_arrays(a: T, b: T) -> T | dict | int | float | None:
             if a is None:
                 return b
             if b is None:
+                return a
+            if isinstance(a, int | float) and isinstance(b, int | float) and a == b:
                 return a
             if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
                 return operation(a, b)
@@ -186,12 +190,9 @@ class SimulationResults:
                 return {**a, **b}
             return None
 
-        combined_dict: dict[str, np.ndarray | dict | None] = {}
+        combined_dict: dict[str, np.ndarray | dict | int | float | None] = {}
         for _field in self.__dataclass_fields__:
-            if _field == "extra":
-                combined_dict[_field] = _combine_arrays(self.extra, other.extra)
-            else:
-                combined_dict[_field] = _combine_arrays(getattr(self, _field), getattr(other, _field))
+            combined_dict[_field] = _combine_arrays(getattr(self, _field), getattr(other, _field))
 
         return SimulationResults(**combined_dict)  # type: ignore[arg-type]
 
@@ -207,6 +208,35 @@ class SimulationResults:
             else:
                 zero_dict[_field] = None
         return cls(**zero_dict)
+
+    def to_dataframe(self, *, aggregator: _AggregatorProtocol = np.mean) -> pd.DataFrame:
+        """Convert the SimulationResults object to a pandas DataFrame.
+
+        Args:
+            aggregator: The function used to aggregate the data for each time step.
+                Defaults to np.mean.
+
+        Returns:
+            A pandas DataFrame representing the SimulationResults object.
+        """
+
+        def process_value(key: str, value: Any) -> pd.Series | pd.DataFrame:
+            if isinstance(value, np.ndarray):
+                if value.ndim == 2:
+                    return pd.Series(aggregator(value, axis=1), name=key)
+                return pd.Series(value, name=key)
+            if isinstance(value, dict):
+                return pd.concat([process_value(f"{key}_{k}", v) for k, v in value.items()], axis=1)
+            return pd.Series([value] * len(self.monthly_costs), name=key)
+
+        data = pd.concat(
+            [process_value(field, value) for field, value in self.__dict__.items() if not field.startswith("_")], axis=1
+        )
+
+        start_date = datetime.datetime.now(datetime.timezone.utc).replace(day=1)
+        date_index = pd.date_range(start=start_date, periods=len(self.monthly_costs), freq="M")
+
+        return pd.DataFrame(data, index=date_index)
 
     def get_cost_statistics(self) -> dict[str, float]:
         """Calculate summary statistics of the simulated costs.
@@ -264,7 +294,7 @@ class SimulationResults:
             msg = "Could not find cumulative costs."
             raise ValueError(msg)
 
-        years = np.array(list(range(1, (12 * self.total_years) + 1))) / 12
+        years = np.arange(1, int((12 * self.total_years) + 1)) / 12
         avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss)
 
         plt.figure(figsize=figsize)
@@ -376,7 +406,7 @@ class SimulationResults:
             cell.alignment = alignment
             cell.border = border
 
-        months = list(range(1, (12 * self.total_years) + 1))
+        months = range(1, int((12 * self.total_years) + 1))
         avg_costs, ci_lower, ci_upper = calculate_confidence_intervals(profit_loss)
 
         for month, avg, lower, upper in zip(months, avg_costs, ci_lower, ci_upper, strict=True):
@@ -433,3 +463,7 @@ class SimulationEngine:
         months = np.arange(self.total_months)[:, np.newaxis]
         months_matrix = np.tile(months, (1, self.simulations))
         return simulate_vectorized(months_matrix)
+
+
+class _AggregatorProtocol(Protocol):
+    def __call__(self, a: np.ndarray, axis: int, *args: Any, **kwargs: Any) -> np.ndarray: ...
