@@ -287,7 +287,16 @@ def _clean_metric_name(name: str) -> str:
 
 
 def _format_metric_value(name: str, value: float) -> str:
-    percentage_metrics = {"arithmetic_mean", "geometric_mean", "twr", "irr", "maximum_drawdown", "var_95", "es_95"}
+    percentage_metrics = {
+        "arithmetic_mean",
+        "geometric_mean",
+        "twr",
+        "irr",
+        "max_drawdown",
+        "var_95",
+        "es_95",
+        "volatility",
+    }
     if name in percentage_metrics:
         return f"{value:.2%}"
     dollar_metrics = {"final_dollar_return"}
