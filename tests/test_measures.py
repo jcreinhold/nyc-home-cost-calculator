@@ -7,10 +7,13 @@ from nyc_home_cost_calculator.measures import (
     beta,
     calculate_measures,
     calculate_returns,
+    calmar_ratio,
     expected_shortfall,
     geometric_mean,
     maximum_drawdown,
+    modified_var,
     money_weighted_return,
+    omega_ratio,
     sharpe_ratio,
     sortino_ratio,
     standard_deviation,
@@ -188,6 +191,48 @@ def test_beta(sample_data: tuple[pd.Series, pd.Series, pd.Series, pd.Series]) ->
     assert beta(returns, market_returns) == pytest.approx(1.53, abs=1e-2)
 
 
+def test_omega_ratio(sample_data: tuple[pd.Series, pd.Series, pd.Series, pd.Series]) -> None:
+    """Test omega_ratio function.
+
+    Derivation:
+    Omega = (Sum of returns above threshold) / |Sum of returns below threshold|
+    Returns above 0: 0.02 + 0.020202 + 0.019802 = 0.060004
+    Returns below 0: |-0.029412| = 0.029412
+    Omega = 0.060004 / 0.029412 ≈ 2.04012
+    """
+    _, _, returns, _ = sample_data
+    assert omega_ratio(returns) == pytest.approx(2.04012, abs=1e-4)
+
+
+def test_modified_var(sample_data: tuple[pd.Series, pd.Series, pd.Series, pd.Series]) -> None:
+    """Test modified_var function.
+
+    Derivation:
+    MVaR = μ - σ * (z_α + (z_α^2 - 1) * S / 6 + (z_α^3 - 3z_α) * (K - 3) / 24 - (2z_α^3 - 5z_α) * S^2 / 36)
+    μ (mean) ≈ 0.007648058923539397
+    σ (std dev) ≈ 0.02470708887430261
+    S (skewness) ≈ -1.9997378301351476
+    K (kurtosis) ≈ 3.9991262138662123
+    z_α (95% confidence) ≈ -1.6448536269514722
+    MVaR ≈ 0.06
+    """
+    _, _, returns, _ = sample_data
+    assert modified_var(returns) == pytest.approx(0.06, abs=1e-2)
+
+
+def test_calmar_ratio(sample_data: tuple[pd.Series, pd.Series, pd.Series, pd.Series]) -> None:
+    """Test calmar_ratio function.
+
+    Derivation:
+    Calmar = Annualized Return / Maximum Drawdown
+    Annualized Return = 0.0074170729 * 252 ≈ 1.869
+    Maximum Drawdown ≈ 0.02941176
+    Calmar ≈ 1.869 / 0.02941176 ≈ 63.55
+    """
+    _, _, returns, _ = sample_data
+    assert calmar_ratio(returns, period=252) == pytest.approx(63.55, abs=1e-2)
+
+
 def test_calculate_measures(sample_data: tuple[pd.Series, pd.Series, pd.Series, pd.Series]) -> None:
     """Test calculate_measures function.
 
@@ -206,6 +251,9 @@ def test_calculate_measures(sample_data: tuple[pd.Series, pd.Series, pd.Series, 
         "sortino_ratio",
         "var_95",
         "es_95",
+        "mvar_95",
+        "omega_ratio",
+        "calmar_ratio",
         "standard_deviation",
         "sharpe_ratio",
         "maximum_drawdown",

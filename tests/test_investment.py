@@ -147,7 +147,7 @@ def mock_yf_download(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def sample_portfolio(mock_yf_download: pytest.MonkeyPatch) -> Portfolio:
-    return Portfolio(["SPY", "QQQ"], [0.5, 0.5])
+    return Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
 
 
 def test_investment_calculator_from_portfolio(sample_portfolio: Portfolio) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple, TypeVar, cast
 
 import matplotlib as mpl
 import matplotlib.patheffects as path_effects
@@ -16,10 +16,13 @@ from scipy import stats
 from nyc_home_cost_calculator.measures import (
     arithmetic_mean,
     beta,
+    calmar_ratio,
     expected_shortfall,
     geometric_mean,
     maximum_drawdown,
+    modified_var,
     money_weighted_return,
+    omega_ratio,
     sharpe_ratio,
     sortino_ratio,
     standard_deviation,
@@ -30,6 +33,7 @@ from nyc_home_cost_calculator.measures import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    T = TypeVar("T", pd.Series, pd.DataFrame)
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -45,6 +49,8 @@ class Portfolio:
         *,
         period: str = "5y",
         price: str = "Adj Close",
+        market_ticker: str | None = "^GSPC",
+        tz: str | None = None,
     ) -> None:
         """Initialize a Portfolio object.
 
@@ -54,6 +60,8 @@ class Portfolio:
             initial_investments: List of initial investments corresponding to the assets in the portfolio.
             period: The time period for fetching the data (default: "5y").
             price: The price metric to use for the data (default: "Adj Close").
+            market_ticker: The ticker symbol for the market index (default: "^GSPC").
+            tz: The timezone for the data (default: "UTC").
         """
         self.tickers = tickers
         if weights is None and initial_investments is None:
@@ -77,11 +85,15 @@ class Portfolio:
 
         self.period = period
         self.price = price
+        self.tz = tz
         self.full_data = self._fetch_data()
+        self.full_data = self._set_tz(self.full_data)
         self.data = self.full_data[self.price].dropna()
         self.returns = self._calculate_returns()
         self.weighted_returns = self._calculate_weighted_returns()
         self.dollar_returns = self._calculate_dollar_returns()
+        if market_ticker is not None:
+            self.set_market_index(market_ticker, recalculate=False)
         self.metrics = self._calculate_metrics()
 
     def _fetch_data(self) -> pd.DataFrame:
@@ -100,39 +112,45 @@ class Portfolio:
 
     def _calculate_metrics(self) -> dict[str, float]:
         returns = self.weighted_returns
-        values = (1 + returns).cumprod()
 
-        annualized_return = geometric_mean(returns) * TRADING_DAYS_PER_YEAR
-        max_dd = maximum_drawdown(values)
+        values = (1.0 + returns).cumprod()
         final_dollar_return = self.dollar_returns.iloc[-1]
 
         metrics = {
             "arithmetic_mean": float(arithmetic_mean(returns) * TRADING_DAYS_PER_YEAR),
-            "geometric_mean": float(annualized_return),
+            "geometric_mean": float(geometric_mean(returns) * TRADING_DAYS_PER_YEAR),
             "twr": float(time_weighted_return(returns)),
             "irr": float(money_weighted_return(values)),
             "sortino_ratio": float(sortino_ratio(returns) * np.sqrt(TRADING_DAYS_PER_YEAR)),
             "var_95": float(value_at_risk(returns)),
             "es_95": float(expected_shortfall(returns)),
+            "mvar_95": float(modified_var(returns)),
+            "omega_ratio": float(omega_ratio(returns)),
             "volatility": float(standard_deviation(returns) * np.sqrt(TRADING_DAYS_PER_YEAR)),
             "sharpe_ratio": float(sharpe_ratio(returns)),
-            "max_drawdown": float(max_dd),
-            "calmar_ratio": float(annualized_return / abs(max_dd)) if max_dd != 0 else np.inf,
+            "max_drawdown": float(maximum_drawdown(values)),
+            "calmar_ratio": float(calmar_ratio(returns, period=TRADING_DAYS_PER_YEAR)),
             "avg_correlation": float(self._calculate_avg_correlation()),
             "final_dollar_return": float(final_dollar_return),
         }
 
         # Calculate beta if a market index is provided
         if hasattr(self, "market_returns"):
-            metrics["beta"] = float(beta(returns, self.market_returns.to_numpy()))
+            metrics["beta"] = float(beta(returns, self.market_returns))
 
         return metrics
 
-    def set_market_index(self, market_ticker: str) -> None:
+    def _set_tz(self, series: T) -> T:
+        return series.tz_localize(self.tz) if series.index.tzinfo is None else series.tz_convert(self.tz)  # type: ignore[attr-defined]
+
+    def set_market_index(self, market_ticker: str, *, recalculate: bool = True) -> None:
         """Set a market index for beta calculation."""
         market_data = yf.download(market_ticker, period=self.period)[self.price]
+        market_data = self._set_tz(market_data)
+        self.market_ticker = market_ticker
         self.market_returns = market_data.pct_change().dropna()
-        self.metrics = self._calculate_metrics()  # Recalculate metrics to include beta
+        if recalculate:
+            self.metrics = self._calculate_metrics()  # Recalculate metrics to include beta
 
     def _calculate_avg_correlation(self) -> float:
         """Calculate the average pairwise correlation between ticker returns."""
@@ -185,6 +203,8 @@ class Portfolio:
             _metric = _metric.capitalize() if " " in _metric and "95" not in _metric else _metric.upper()
             if _metric == "VAR 95":
                 _metric = "VaR 95"
+            if _metric == "MVAR 95":
+                _metric = "mVaR 95"
             if result.is_significant is not None:
                 significance = "Significant" if result.is_significant else "Not significant"
                 results.append(f"{_metric}: {result.diff:.4f} ({significance}, p={result.p_value:.4f})")
@@ -279,6 +299,8 @@ class TestResult(NamedTuple):
 def _clean_metric_name(name: str) -> str:
     if name == "var_95":
         return "VaR 95"
+    if name == "mvar_95":
+        return "mVaR 95"
     if name == "es_95":
         return "ES 95"
     if name in {"twr", "irr"}:
@@ -295,6 +317,7 @@ def _format_metric_value(name: str, value: float) -> str:
         "max_drawdown",
         "var_95",
         "es_95",
+        "mvar_95",
         "volatility",
     }
     if name in percentage_metrics:

@@ -35,28 +35,28 @@ def mock_yf_download(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_portfolio_initialization(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], [0.6, 0.4])
+    portfolio = Portfolio(["SPY", "QQQ"], [0.6, 0.4], market_ticker=None)
     assert isinstance(portfolio, Portfolio)
     assert portfolio.tickers == ["SPY", "QQQ"]
     np.testing.assert_array_almost_equal(portfolio.weights, np.array([0.6, 0.4]))
 
 
 def test_data_fetching(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5])
+    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
     assert isinstance(portfolio.data, pd.DataFrame)
     assert len(portfolio.data) == 100
     assert set(portfolio.data.columns) == {"SPY", "QQQ"}
 
 
 def test_returns_calculation(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5])
+    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
     assert isinstance(portfolio.returns, pd.DataFrame)
     assert len(portfolio.returns) == 99  # One less than data due to pct_change
     assert set(portfolio.returns.columns) == {"SPY", "QQQ"}
 
 
 def test_metrics_calculation(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5])
+    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
     metrics = portfolio.metrics
     assert isinstance(metrics, dict)
     expected_metrics = [
@@ -71,8 +71,8 @@ def test_metrics_calculation(mock_yf_download: pytest.MonkeyPatch) -> None:
 
 
 def test_portfolio_comparison(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio1 = Portfolio(["SPY", "QQQ"], [0.6, 0.4])
-    portfolio2 = Portfolio(["SPY", "QQQ"], [0.4, 0.6])
+    portfolio1 = Portfolio(["SPY", "QQQ"], [0.6, 0.4], market_ticker=None)
+    portfolio2 = Portfolio(["SPY", "QQQ"], [0.4, 0.6], market_ticker=None)
     comparison = portfolio1.compare(portfolio2)
     assert isinstance(comparison, dict)
     comparison_str = Portfolio.comparison_to_str(comparison)
@@ -91,16 +91,16 @@ def test_portfolio_comparison(mock_yf_download: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_portfolio_with_different_weights(mock_yf_download: pytest.MonkeyPatch, weights: list[float]) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], weights)
+    portfolio = Portfolio(["SPY", "QQQ"], weights, market_ticker=None)
     assert isinstance(portfolio, Portfolio)
     np.testing.assert_array_almost_equal(portfolio.weights, np.array(weights))
 
 
 def test_invalid_weights(mock_yf_download: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="Weights must sum to 1.0"):
-        Portfolio(["SPY", "QQQ"], [0.5, 0.6])  # Weights sum to > 1
+        Portfolio(["SPY", "QQQ"], [0.5, 0.6], market_ticker=None)  # Weights sum to > 1
 
 
 def test_plot_returns(mock_yf_download: pytest.MonkeyPatch) -> None:
-    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5])
+    portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
     portfolio.plot_returns()

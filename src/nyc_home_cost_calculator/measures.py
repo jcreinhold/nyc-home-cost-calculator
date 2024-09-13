@@ -7,7 +7,7 @@ from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
-from scipy import optimize
+from scipy import optimize, stats
 
 TRADING_DAYS_PER_YEAR = 252
 logger = logging.getLogger(__name__)
@@ -422,6 +422,83 @@ def beta(portfolio_returns: pd.Series, market_returns: pd.Series) -> float:
     return float(result.real) if isinstance(result, complex) else float(result)
 
 
+def omega_ratio(returns: pd.Series[float], threshold: float = 0.0) -> float:
+    """Calculate the Omega ratio for a given series of returns.
+
+    The Omega ratio is defined as:
+    Ω(r) = ∫[r,∞] (1 - F(x))dx / ∫[-∞,r] F(x)dx
+
+    where F(x) is the cumulative distribution function of returns,
+    and r is the threshold return.
+
+    Args:
+        returns: A pandas Series of returns.
+        threshold: The threshold return (default is 0).
+
+    Returns:
+        The calculated Omega ratio.
+    """
+    excess_returns = returns - threshold
+    positive_returns = excess_returns[excess_returns > 0.0]
+    negative_returns = excess_returns[excess_returns <= 0.0]
+
+    return positive_returns.sum() / negative_returns.abs().sum()
+
+
+def modified_var(returns: pd.Series[float], confidence: float = 0.95) -> float:
+    """Calculate the Modified Value at Risk (MVaR) for a given series of returns.
+
+    MVaR adjusts the traditional VaR for non-normal distributions by
+    incorporating skewness and kurtosis:
+
+    MVaR = μ - σ * (z_α + (z_α^2 - 1) * S / 6 + (z_α^3 - 3z_α) * (K - 3) / 24 - (2z_α^3 - 5z_α) * S^2 / 36)
+
+    where:
+    μ is the mean return
+    σ is the standard deviation of returns
+    z_α is the z-score for the given confidence level
+    S is the skewness of returns
+    K is the kurtosis of returns
+
+    Args:
+        returns: A pandas Series of returns.
+        confidence: Confidence level (default is 0.95 for 95% MVaR).
+
+    Returns:
+        The calculated Modified VaR.
+    """
+    mu: float = returns.mean()
+    sigma: float = returns.std()
+    skew = cast(float, returns.skew())
+    excess_kurt = cast(float, returns.kurtosis())
+    z_score: float = stats.norm.ppf(1.0 - confidence)
+
+    return mu - sigma * (
+        z_score
+        + (z_score**2.0 - 1.0) * skew / 6.0
+        + (z_score**3.0 - 3.0 * z_score) * excess_kurt / 24.0
+        - (2.0 * z_score**3.0 - 5.0 * z_score) * skew**2.0 / 36.0
+    )
+
+
+def calmar_ratio(returns: pd.Series, period: int = 252) -> float:
+    """Calculate the Calmar ratio for a given series of returns.
+
+    Calmar ratio = Annualized Return / Maximum Drawdown
+
+    Args:
+        returns: A pandas Series of returns.
+        period: Number of periods in a year for annualization (default is 252 for daily returns).
+
+    Returns:
+        The calculated Calmar ratio.
+    """
+    values = (1.0 + returns).cumprod()
+    max_drawdown = maximum_drawdown(values)
+    annualized_return = geometric_mean(returns) * period
+    return annualized_return / max_drawdown if max_drawdown != 0.0 else float("inf")
+
+
 def calculate_measures(values: pd.Series[float], market_values: pd.Series[float] | None = None) -> pd.DataFrame:
     """Calculate financial measures for rolling periods of n points.
 
@@ -443,9 +520,12 @@ def calculate_measures(values: pd.Series[float], market_values: pd.Series[float]
             "sortino_ratio": [sortino_ratio(returns)],
             "var_95": [value_at_risk(returns)],
             "es_95": [expected_shortfall(returns)],
+            "mvar_95": [modified_var(returns)],
             "standard_deviation": [standard_deviation(returns)],
             "sharpe_ratio": [sharpe_ratio(returns)],
+            "omega_ratio": [omega_ratio(returns)],
             "maximum_drawdown": [maximum_drawdown(values)],
+            "calmar_ratio": [calmar_ratio(returns)],
         }
     )
 
