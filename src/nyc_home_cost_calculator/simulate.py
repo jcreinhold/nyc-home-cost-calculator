@@ -272,9 +272,9 @@ class SimulationResults:
         self,
         *,
         figsize: tuple[int, int] = (12, 6),
-        title: str = "Projected Costs Over Time",
-        ylabel: str = "Cost ($)",
-        label: str = "Average Cost",
+        title: str = "Projected Profit Over Time",
+        ylabel: str = "Profit ($)",
+        label: str = "Average Profit",
     ) -> None:
         """Plot the projected profit/loss over time with confidence intervals.
 
