@@ -46,7 +46,7 @@ class FinancialLifeSimulator(AbstractSimulatorBase):
         self.initial_marriage_status = initial_marriage_status
 
     def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
-        total_months, num_simulations = shape = months.shape
+        total_months, _ = shape = months.shape
 
         # Simulate career income
         career_results = self.career_simulator._simulate_vectorized(months)  # noqa: SLF001

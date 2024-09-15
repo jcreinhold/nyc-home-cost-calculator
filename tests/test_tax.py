@@ -68,13 +68,11 @@ def test_calculate_tax(tax_calculator: TaxCalculator) -> None:
     taxes = tax_calculator.calculate_tax(incomes, brackets)
 
     # Calculate expected taxes manually
-    expected = np.array(
-        [
-            10000 * 0.10 + 40000 * 0.15,
-            10000 * 0.10 + 40000 * 0.15 + 50000 * 0.25,
-            10000 * 0.10 + 40000 * 0.15 + 150000 * 0.25,
-        ]
-    )
+    expected = np.array([
+        10000 * 0.10 + 40000 * 0.15,
+        10000 * 0.10 + 40000 * 0.15 + 50000 * 0.25,
+        10000 * 0.10 + 40000 * 0.15 + 150000 * 0.25,
+    ])
 
     np.testing.assert_almost_equal(taxes, expected)
 

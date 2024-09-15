@@ -77,7 +77,7 @@ class NYCRentalCostCalculator(AbstractNYCCostCalculator):
         self.rent_increase_rate = NormalRV(self.mean_rent_increase_rate, self.rent_increase_volatility, rng=self.rng)
         self.inflation_rate = NormalRV(self.mean_inflation_rate, self.inflation_volatility, rng=self.rng)
 
-    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
+    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:  # noqa: PLR0914
         total_months, num_simulations = shape = months.shape
 
         # Generate random rates

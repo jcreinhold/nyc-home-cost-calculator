@@ -157,7 +157,8 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         self.state_adjustment = NormalRV(0.0, 0.005, rng=self.rng)
         self.local_adjustment = NormalRV(0.0, 0.002, rng=self.rng)
 
-    def calculate_monthly_payment(self, principal: float, annual_rate: float, months: int) -> float:
+    @staticmethod
+    def calculate_monthly_payment(principal: float, annual_rate: float, months: int) -> float:
         """Calculate the monthly mortgage payment.
 
         Args:
@@ -175,7 +176,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         """Calculate the current age based on the simulation year."""
         return self.initial_age + year
 
-    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
+    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:  # noqa: PLR0914
         total_months, num_simulations = shape = months.shape
         years = months // 12
 
@@ -272,12 +273,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         monthly_tax_savings = tax_deductions / 12
 
         monthly_costs = (
-            + actual_interest_payments
-            + property_taxes
-            + insurance
-            + maintenance
-            + hoa_fees
-            - monthly_tax_savings
+            +actual_interest_payments + property_taxes + insurance + maintenance + hoa_fees - monthly_tax_savings
         )
 
         monthly_net_outflows = monthly_costs + actual_principal_payments

@@ -153,9 +153,6 @@ def money_weighted_return(  # noqa: C901
 
     Returns:
         float: The money-weighted return as a decimal (e.g., 0.1 for 10% return).
-
-    Raises:
-        ValueError: If the algorithm fails to converge on a solution.
     """
     if initial_investment is None:
         initial_investment = values.iloc[0]
@@ -172,11 +169,11 @@ def money_weighted_return(  # noqa: C901
         # Assume uniform intervals and convert to years based on the period
         times = np.arange(len(values))
         if period == "D":
-            times = times / 365.25
+            times /= 365.25
         elif period == "M":
-            times = times / 12.0
+            times /= 12.0
         elif period == "Q":
-            times = times / 4.0
+            times /= 4.0
         # 'Y' doesn't need adjustment
 
     def npv(rate: float) -> float:
@@ -511,23 +508,21 @@ def calculate_measures(values: pd.Series[float], market_values: pd.Series[float]
     """
     returns = calculate_returns(values)
 
-    results = pd.DataFrame(
-        {
-            "arithmetic_mean": [arithmetic_mean(returns)],
-            "geometric_mean": [geometric_mean(returns)],
-            "twr": [time_weighted_return(returns)],
-            "irr": [money_weighted_return(values)],
-            "sortino_ratio": [sortino_ratio(returns)],
-            "var_95": [value_at_risk(returns)],
-            "es_95": [expected_shortfall(returns)],
-            "mvar_95": [modified_var(returns)],
-            "standard_deviation": [standard_deviation(returns)],
-            "sharpe_ratio": [sharpe_ratio(returns)],
-            "omega_ratio": [omega_ratio(returns)],
-            "maximum_drawdown": [maximum_drawdown(values)],
-            "calmar_ratio": [calmar_ratio(returns)],
-        }
-    )
+    results = pd.DataFrame({
+        "arithmetic_mean": [arithmetic_mean(returns)],
+        "geometric_mean": [geometric_mean(returns)],
+        "twr": [time_weighted_return(returns)],
+        "irr": [money_weighted_return(values)],
+        "sortino_ratio": [sortino_ratio(returns)],
+        "var_95": [value_at_risk(returns)],
+        "es_95": [expected_shortfall(returns)],
+        "mvar_95": [modified_var(returns)],
+        "standard_deviation": [standard_deviation(returns)],
+        "sharpe_ratio": [sharpe_ratio(returns)],
+        "omega_ratio": [omega_ratio(returns)],
+        "maximum_drawdown": [maximum_drawdown(values)],
+        "calmar_ratio": [calmar_ratio(returns)],
+    })
 
     if market_values is not None:
         market_returns = calculate_returns(market_values)

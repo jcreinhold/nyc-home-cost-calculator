@@ -55,7 +55,7 @@ class CareerIncomeSimulator(AbstractSimulatorBase):
         self.mean_layoff_duration_months = mean_layoff_duration_months
         self.layoff_income_impact = layoff_income_impact
 
-    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
+    def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:  # noqa: PLR0914
         total_months, num_simulations = shape = months.shape
 
         # Generate monthly income growth rates

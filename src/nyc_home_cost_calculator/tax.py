@@ -107,19 +107,20 @@ class TaxCalculator:
             FilingStatus.MARRIED_SEPARATE: 5_000.0,
         }
 
-    def get_mortgage_interest_deduction_limit(
-        self, mortgage_rates: np.ndarray, filing_status: np.ndarray
-    ) -> np.ndarray:
+    @staticmethod
+    def get_mortgage_interest_deduction_limit(mortgage_rates: np.ndarray, filing_status: np.ndarray) -> np.ndarray:
         """Get the mortgage interest deduction limit based on filing status."""
         return np.where(
             filing_status == FilingStatus.MARRIED_SEPARATE, 375_000.0 * mortgage_rates, 750_000.0 * mortgage_rates
         )
 
-    def get_standard_deduction(self, filing_status: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def get_standard_deduction(filing_status: np.ndarray) -> np.ndarray:
         """Get the standard deduction based on the filing status."""
         return np.where(filing_status == FilingStatus.MARRIED_JOINT, 27_700.0, 13_850.0)
 
-    def get_salt_deduction_limit(self, filing_status: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def get_salt_deduction_limit(filing_status: np.ndarray) -> np.ndarray:
         """Get the SALT deduction limit based on filing status."""
         return np.where(filing_status == FilingStatus.MARRIED_SEPARATE, 5_000.0, 10_000.0)
 
@@ -167,7 +168,8 @@ class TaxCalculator:
 
         return federal_deductions + state_deductions
 
-    def _adjust_brackets_for_inflation(self, brackets: list[Bracket], inflation_rates: np.ndarray) -> list[Bracket]:
+    @staticmethod
+    def _adjust_brackets_for_inflation(brackets: list[Bracket], inflation_rates: np.ndarray) -> list[Bracket]:
         """Adjust tax brackets for inflation."""
         adjusted_brackets = []
         for lower, upper, rate in brackets:
@@ -235,7 +237,8 @@ class TaxCalculator:
         # Ensure rates are non-negative
         return EffectiveTaxRate(np.maximum(0.0, federal_rate), np.maximum(0.0, state_rate), np.maximum(0.0, local_rate))
 
-    def get_tax_brackets(self, incomes: np.ndarray, brackets: list[Bracket]) -> np.ndarray:
+    @staticmethod
+    def get_tax_brackets(incomes: np.ndarray, brackets: list[Bracket]) -> np.ndarray:
         """Get the tax brackets for given incomes (vectorized)."""
         rates = np.zeros_like(incomes)
         for lower, _, rate in brackets:

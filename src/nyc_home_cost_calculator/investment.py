@@ -50,7 +50,7 @@ class InvestmentCalculator(AbstractSimulatorBase):
         self.degrees_of_freedom = degrees_of_freedom
 
     def _simulate_vectorized(self, months: np.ndarray) -> SimulationResults:
-        total_months, num_simulations = shape = months.shape
+        total_months, _ = shape = months.shape
 
         # Generate monthly returns using Student's t-distribution
         if self.volatility == 0.0:

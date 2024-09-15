@@ -37,6 +37,7 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
+preview = true
 select = [
     "E",    # pycodestyle errors
     "W",    # pycodestyle warnings
@@ -94,6 +95,9 @@ ignore = [
     "ANN102",
     "ANN204",
     "ANN401",
+    "DOC201",
+    "DOC402",
+    "DOC501",
     "COM812",
     "ISC001",
     "PD901",
@@ -117,6 +121,9 @@ max-line-length = 120
 
 [tool.ruff.lint.pylint]
 max-args = 30
+
+[tool.ruff.format]
+preview = true
 
 [tool.mypy]
 python_version = "3.10"

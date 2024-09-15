@@ -315,7 +315,7 @@ class SimulationResults:
         plt.tight_layout()
         plt.show()
 
-    def export_to_excel(self, filename: str) -> None:  # noqa: C901, PLR0912, PLR0915
+    def export_to_excel(self, filename: str) -> None:  # noqa: C901, PLR0912, PLR0914, PLR0915
         """Export simulation results and input parameters to an Excel file.
 
         This method creates a formatted Excel workbook with three main sections:
@@ -410,7 +410,7 @@ class SimulationResults:
         avg_costs, ci_lower, ci_upper = calculate_confidence_intervals(profit_loss)
 
         for month, avg, lower, upper in zip(months, avg_costs, ci_lower, ci_upper, strict=True):
-            ws.append([month, f"${avg:,.2f}", f"${avg+lower:,.2f}", f"${avg+upper:,.2f}"])
+            ws.append([month, f"${avg:,.2f}", f"${avg + lower:,.2f}", f"${avg + upper:,.2f}"])
 
         for row in ws.iter_rows(min_row=start_row + 2, max_row=ws.max_row, min_col=1, max_col=4):
             for cell in row:

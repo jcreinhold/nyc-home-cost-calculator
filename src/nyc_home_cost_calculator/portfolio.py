@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import starmap
 from typing import TYPE_CHECKING, NamedTuple, TypeVar, cast
 
 import matplotlib as mpl
@@ -62,6 +63,10 @@ class Portfolio:
             price: The price metric to use for the data (default: "Adj Close").
             market_ticker: The ticker symbol for the market index (default: "^GSPC").
             tz: The timezone for the data (default: "UTC").
+
+        Raises:
+            ValueError: If both weights and initial_investments are provided or if neither are provided
+            or if weights don't sum to one.
         """
         self.tickers = tickers
         if weights is None and initial_investments is None:
@@ -399,7 +404,7 @@ def _plot_table(metrics: dict[str, float], ax: plt.Axes | None = None) -> plt.Ax
     if ax is None:
         _, ax = plt.subplots()
     metric_names = [_clean_metric_name(m) for m in metrics]
-    metric_values = [_format_metric_value(m, v) for m, v in metrics.items()]
+    metric_values = list(starmap(_format_metric_value, metrics.items()))
 
     # Split metrics into two rows if there are more than 5
     if len(metrics) > 5:

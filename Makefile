@@ -22,6 +22,8 @@ activate: ## Activate the virtual environment
 		exit 1; \
 	fi
 
+ci: format lint mypy coverage  ## Run all CI checks
+
 clean: ## Remove build artifacts and cache directories
 	find . -type d -name 'build/' -exec rm -rf {} +
 	find . -type d -name 'dist/' -exec rm -rf {} +
@@ -36,7 +38,7 @@ clean: ## Remove build artifacts and cache directories
 	find . -type f -name '.mypy_cache' -exec rm -rf {} +
 
 coverage: activate  ## Run tests and generate coverage report
-	$(BIN)/pytest --cov=src --cov-report=html tests
+	$(BIN)/pytest --cov=src --cov-report=html --cov-report=term-missing --cov-fail-under=80 tests
 	@echo "Coverage report available at htmlcov/index.html"
 
 format: activate  ## Format code with Ruff
