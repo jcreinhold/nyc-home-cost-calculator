@@ -272,7 +272,6 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         monthly_tax_savings = tax_deductions / 12
 
         monthly_costs = (
-            actual_principal_payments
             + actual_interest_payments
             + property_taxes
             + insurance
@@ -281,11 +280,13 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             - monthly_tax_savings
         )
 
+        monthly_net_outflows = monthly_costs + actual_principal_payments
+
         # Calculate cumulative costs
         cumulative_costs = np.cumsum(monthly_costs, axis=0)
 
         # Add initial costs to cumulative costs
-        cumulative_costs += self.purchase_closing_costs + self.down_payment
+        cumulative_costs += self.purchase_closing_costs
 
         # Calculate final sale costs and profit/loss
         sale_closing_costs = home_values * self.sale_closing_cost_rate
@@ -318,6 +319,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
                 "hoa_fees": hoa_fees,
                 "principal_payments": actual_principal_payments,
                 "interest_payments": actual_interest_payments,
+                "monthly_net_outflows": monthly_net_outflows,
                 "sale_closing_costs": sale_closing_costs,
                 "cumulative_real_appreciation": cumulative_real_appreciation,
                 "cumulative_inflation": cumulative_inflation,
