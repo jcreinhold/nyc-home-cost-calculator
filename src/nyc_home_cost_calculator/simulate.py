@@ -18,7 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from nyc_home_cost_calculator.utils import calculate_confidence_intervals
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable
 
     from matplotlib.axes import Axes
@@ -310,7 +310,7 @@ class SimulationResults:
         years = np.arange(1, int((12 * self.total_years) + 1)) / 12
         avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss, confidence_level=ci)
 
-        if ax is None:
+        if ax is None:  # pragma: no cover
             _, ax = plt.subplots(figsize=figsize)
 
         # Convert color to RGBA

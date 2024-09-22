@@ -149,6 +149,7 @@ class NYCRentalCostCalculator(AbstractNYCCostCalculator):
             profit_loss=-cumulative_costs,
             total_years=self.total_years,
             simulations=self.simulations,
+            _input_parameters=self._get_input_parameters(),
         )
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:

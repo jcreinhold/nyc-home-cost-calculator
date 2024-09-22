@@ -321,6 +321,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
                 "layoff_mask": life_results.extra["layoff_mask"],
                 "divorce_costs": life_results.extra["divorce_costs"],
             },
+            _input_parameters=self._get_input_parameters(),
         )
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:

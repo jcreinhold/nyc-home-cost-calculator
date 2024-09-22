@@ -31,7 +31,7 @@ from nyc_home_cost_calculator.measures import (
     value_at_risk,
 )
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Sequence
 
     T = TypeVar("T", pd.Series, pd.DataFrame)

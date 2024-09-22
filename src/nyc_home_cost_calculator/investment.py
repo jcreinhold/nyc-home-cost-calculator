@@ -10,7 +10,7 @@ from scipy import stats
 from nyc_home_cost_calculator.base import AbstractSimulatorBase
 from nyc_home_cost_calculator.simulate import SimulationResults
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from typing import Any
 
     from nyc_home_cost_calculator.portfolio import Portfolio
@@ -96,6 +96,7 @@ class InvestmentCalculator(AbstractSimulatorBase):
             extra={
                 "monthly_log_returns": monthly_log_returns,
             },
+            _input_parameters=self._get_input_parameters(),
         )
 
     def _get_input_parameters(self) -> list[tuple[str, str]]:
