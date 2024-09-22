@@ -1,6 +1,4 @@
 from pathlib import Path
-from typing import Any
-from unittest.mock import patch
 
 import matplotlib as mpl
 import pytest
@@ -65,12 +63,6 @@ def test_get_cost_statistics(results: SimulationResults) -> None:
     expected_keys = ["mean", "median", "std_dev", "percentile_5", "percentile_95"]
     assert all(key in stats for key in expected_keys)
     assert all(isinstance(value, float) for value in stats.values())
-
-
-@patch("matplotlib.pyplot.show")
-def test_plot_costs_over_time(mock_show: Any, results: SimulationResults) -> None:
-    results.plot()
-    mock_show.assert_called_once()
 
 
 def test_export_to_excel(results: SimulationResults, tmp_path: Path) -> None:

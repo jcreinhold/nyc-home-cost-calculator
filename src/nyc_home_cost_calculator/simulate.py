@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import ticker
+from matplotlib.colors import to_rgba
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -19,6 +20,8 @@ from nyc_home_cost_calculator.utils import calculate_confidence_intervals
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from matplotlib.axes import Axes
 
     T = TypeVar("T")
 
@@ -270,50 +273,82 @@ class SimulationResults:
 
     def plot(
         self,
+        ax: Axes | None = None,
         *,
         figsize: tuple[int, int] = (12, 6),
         title: str = "Projected Profit Over Time",
         ylabel: str = "Profit ($)",
         label: str = "Average Profit",
-    ) -> None:
-        """Plot the projected profit/loss over time with confidence intervals.
+        ci: float = 0.95,
+        quantile_range: tuple[float, float] | None = None,
+        color: str = "C0",
+    ) -> Axes:
+        """Plot the projected profit/loss over time with confidence intervals and optional percentile range.
 
         This method generates a line plot showing the average profit/loss for each month
-        of the loan term, along with a 95% confidence interval. It also includes a
-        break-even line for reference.
+        of the loan term, along with a confidence interval and an optional percentile range.
 
         Args:
-            figsize: A tuple specifying the figure size in inches (width, height).
+            ax: Optional matplotlib Axes object to plot on. If not provided, a new figure and axes will be created.
+            figsize: A tuple specifying the figure size in inches (width, height). Only used if ax is None.
             title: The title of the plot.
             ylabel: The label for the y-axis.
             label: The label for the average cost line.
+            ci: The confidence interval to plot (default: 0.95 for 95% CI).
+            quantile_range: An optional tuple of (lower, upper) quantiles to plot (e.g., (0.05, 0.95) for 90% range).
+            color: The base color to use for the plot (default: 'C0', which is usually blue).
+
+        Returns:
+            The matplotlib Axes object containing the plot.
         """
         profit_loss = self.profit_loss
 
         if profit_loss is None:
-            msg = "Could not find cumulative costs."
+            msg = "Could not find profit/loss data."
             raise ValueError(msg)
 
         years = np.arange(1, int((12 * self.total_years) + 1)) / 12
-        avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss)
+        avg_costs, lower_bound, upper_bound = calculate_confidence_intervals(profit_loss, confidence_level=ci)
 
-        plt.figure(figsize=figsize)
-        plt.plot(years, avg_costs, label=label)
-        plt.fill_between(years, lower_bound, upper_bound, alpha=0.2, label="95% Confidence Interval")
+        if ax is None:
+            _, ax = plt.subplots(figsize=figsize)
 
-        plt.title(title)
-        plt.xlabel("Years")
-        plt.ylabel(ylabel)
-        plt.legend()
-        plt.grid(visible=True)
+        # Convert color to RGBA
+        base_color = to_rgba(color)
 
-        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
-        plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(1))
-        plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}"))
-        plt.gca().xaxis.set_minor_locator(ticker.MultipleLocator(0.25))
+        # Plot average line
+        ax.plot(years, avg_costs, color=base_color, label=label)
+
+        # Plot confidence intervals
+        ci_color = (*base_color[:3], 0.3)
+        ax.fill_between(years, lower_bound, upper_bound, color=ci_color, label=f"{100.0 * ci:.0f}% Confidence Interval")
+
+        if quantile_range:
+            lower_quantile, upper_quantile = quantile_range
+            lower_bound = np.quantile(profit_loss, lower_quantile, axis=1)
+            upper_bound = np.quantile(profit_loss, upper_quantile, axis=1)
+            quantile_color = (*base_color[:3], 0.1)
+            ax.fill_between(
+                years,
+                lower_bound,
+                upper_bound,
+                color=quantile_color,
+                label=f"{100.0 * (upper_quantile - lower_quantile):.0f}% Range",
+            )
+
+        ax.set_title(title)
+        ax.set_xlabel("Years")
+        ax.set_ylabel(ylabel)
+        ax.legend()
+        ax.grid(visible=True)
+
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"${x:,.0f}"))
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}"))
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.25))
 
         plt.tight_layout()
-        plt.show()
+        return ax
 
     def export_to_excel(self, filename: str) -> None:  # noqa: C901, PLR0912, PLR0914, PLR0915
         """Export simulation results and input parameters to an Excel file.

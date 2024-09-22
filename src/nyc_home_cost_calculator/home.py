@@ -32,7 +32,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         insurance_rate: float = 0.005,
         maintenance_rate: float = 0.01,
         property_tax_rate: float = 0.01,
-        mean_appreciation_rate: float = 0.015,
+        mean_appreciation_rate: float = 0.03,
         appreciation_volatility: float = 0.05,
         mean_inflation_rate: float = 0.02,
         inflation_volatility: float = 0.01,
@@ -66,7 +66,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
             insurance_rate: Annual insurance rate as a fraction of home value. Defaults to 0.5% of home value.
             maintenance_rate: Annual maintenance cost as a fraction of home value. Defaults to 1% of home value.
             property_tax_rate: Annual property tax rate. Defaults to 1% of home value.
-            mean_appreciation_rate: Expected real annual home appreciation rate. Defaults to 1.5% per year.
+            mean_appreciation_rate: Expected annual home appreciation rate. Defaults to 3.0% per year.
             appreciation_volatility: Volatility of the home appreciation rate. Defaults to 5%.
             mean_inflation_rate: Expected annual inflation rate. Defaults to 2% per year.
             inflation_volatility: Volatility of the inflation rate. Defaults to 1%.
@@ -198,15 +198,13 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
         marital_status = life_results.marital_status
 
         # Calculate cumulative rates
-        # Adjust appreciation rate to account for inflation
         inflation_rates = self.inflation_rate(shape)
-        appreciation_rates = self.appreciation_rate(shape)
-        real_appreciation_rate = (1.0 + appreciation_rates) * (1.0 + inflation_rates) - 1.0
-        cumulative_real_appreciation = np.cumprod(1.0 + real_appreciation_rate / 12.0, axis=0)
         cumulative_inflation = np.cumprod(1.0 + inflation_rates / 12.0, axis=0)
+        appreciation_rates = self.appreciation_rate(shape)
+        cumulative_appreciation = np.cumprod(1.0 + appreciation_rates / 12.0, axis=0)
 
         # Update values over time
-        home_values = self.home_price * cumulative_real_appreciation
+        home_values = self.home_price * cumulative_appreciation
         hoa_fees = self.hoa_fee * cumulative_inflation
 
         # Calculate mortgage amortization
@@ -317,7 +315,7 @@ class NYCHomeCostCalculator(AbstractNYCCostCalculator):
                 "interest_payments": actual_interest_payments,
                 "monthly_net_outflows": monthly_net_outflows,
                 "sale_closing_costs": sale_closing_costs,
-                "cumulative_real_appreciation": cumulative_real_appreciation,
+                "cumulative_appreciation": cumulative_appreciation,
                 "cumulative_inflation": cumulative_inflation,
                 "layoff_durations": life_results.extra["layoff_durations"],
                 "layoff_mask": life_results.extra["layoff_mask"],
