@@ -17,19 +17,33 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def mock_yf_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    rng = np.random.default_rng(42)
-
     def _mock_download(*args: Any, **kwargs: Any) -> pd.DataFrame:
+        rng = np.random.default_rng(42)
         dates = pd.date_range(start="2020-01-01", periods=100, freq="D", tz="UTC")
-        data = pd.DataFrame(
+        price_data = pd.DataFrame(
             {
                 "QQQ": rng.standard_normal(100).cumsum() + 100.0,
                 "SPY": rng.standard_normal(100).cumsum() + 100.0,
             },
             index=dates,
         )
-        data.columns = pd.MultiIndex.from_product([["Adj Close"], data.columns])
-        return data
+        price_data.columns = pd.MultiIndex.from_product([["Adj Close"], price_data.columns])
+
+        if kwargs.get("actions", False):
+            dividend_data = pd.DataFrame(
+                {
+                    "QQQ": [0.0] * 100,
+                    "SPY": [0.0] * 100,
+                },
+                index=dates,
+            )
+            # Add a dividend for QQQ on day 50
+            dividend_data.loc[dates[50], "QQQ"] = 100.0
+            # Add dividend for SPY on day 75
+            dividend_data.loc[dates[75], "SPY"] = 100.0
+            dividend_data.columns = pd.MultiIndex.from_product([["Dividends"], dividend_data.columns])
+            return pd.concat([price_data, dividend_data], axis=1)
+        return price_data
 
     monkeypatch.setattr("yfinance.download", _mock_download)
 
@@ -43,9 +57,9 @@ def test_portfolio_initialization(mock_yf_download: pytest.MonkeyPatch) -> None:
 
 def test_data_fetching(mock_yf_download: pytest.MonkeyPatch) -> None:
     portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
-    assert isinstance(portfolio.data, pd.DataFrame)
-    assert len(portfolio.data) == 100
-    assert set(portfolio.data.columns) == {"SPY", "QQQ"}
+    assert isinstance(portfolio.price_values, pd.DataFrame)
+    assert len(portfolio.price_values) == 100
+    assert set(portfolio.price_values.columns) == {"SPY", "QQQ"}
 
 
 def test_returns_calculation(mock_yf_download: pytest.MonkeyPatch) -> None:
@@ -60,7 +74,7 @@ def test_metrics_calculation(mock_yf_download: pytest.MonkeyPatch) -> None:
     metrics = portfolio.metrics
     assert isinstance(metrics, dict)
     expected_metrics = [
-        "geometric_mean",
+        "cagr",
         "volatility",
         "sharpe_ratio",
         "max_drawdown",
@@ -104,3 +118,19 @@ def test_invalid_weights(mock_yf_download: pytest.MonkeyPatch) -> None:
 def test_plot_returns(mock_yf_download: pytest.MonkeyPatch) -> None:
     portfolio = Portfolio(["SPY", "QQQ"], [0.5, 0.5], market_ticker=None)
     portfolio.plot_returns()
+
+
+def test_portfolio_with_dividend_reinvestment(mock_yf_download: pytest.MonkeyPatch) -> None:
+    pf_with_dist = Portfolio(["SPY", "QQQ"], [0.5, 0.5], reinvest_distributions=True, market_ticker=None)
+    pf_wo_dist = Portfolio(["SPY", "QQQ"], [0.5, 0.5], reinvest_distributions=False, market_ticker=None)
+
+    # The portfolio with reinvested dividends should have a higher final value
+    assert pf_with_dist.dollar_returns.iloc[-1] > pf_wo_dist.dollar_returns.iloc[-1]
+
+    # Check if the return on the dividend payment dates is higher for the portfolio with reinvested dividends
+    assert pf_with_dist.returns.iloc[49].loc["QQQ"] > pf_wo_dist.returns.iloc[49].loc["QQQ"]
+    assert pf_with_dist.returns.iloc[74].loc["SPY"] > pf_wo_dist.returns.iloc[74].loc["SPY"]
+
+    # Check that the weights are correctly applied
+    assert len(pf_with_dist.weighted_returns) == len(pf_with_dist.returns)
+    assert len(pf_wo_dist.weighted_returns) == len(pf_wo_dist.returns)

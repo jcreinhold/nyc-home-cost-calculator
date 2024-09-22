@@ -52,6 +52,7 @@ class Portfolio:
         price: str = "Adj Close",
         market_ticker: str | None = "^GSPC",
         tz: str | None = None,
+        reinvest_distributions: bool = False,
     ) -> None:
         """Initialize a Portfolio object.
 
@@ -63,6 +64,7 @@ class Portfolio:
             price: The price metric to use for the data (default: "Adj Close").
             market_ticker: The ticker symbol for the market index (default: "^GSPC").
             tz: The timezone for the data (default: "UTC").
+            reinvest_distributions: Whether to reinvest distributions (default: False).
 
         Raises:
             ValueError: If both weights and initial_investments are provided or if neither are provided
@@ -86,14 +88,15 @@ class Portfolio:
             if not np.isclose(self.weights.sum(), 1.0, rtol=1e-5):
                 msg = "Weights must sum to 1.0"
                 raise ValueError(msg)
-            self.initial_investments = self.weights * 100_000.0
+            self.initial_investments = self.weights
 
         self.period = period
         self.price = price
         self.tz = tz
+        self.reinvest_distributions = reinvest_distributions
         self.full_data = self._fetch_data()
         self.full_data = self._set_tz(self.full_data)
-        self.data = self.full_data[self.price].dropna()
+        self.price_values = self.full_data[self.price].dropna()
         self.returns = self._calculate_returns()
         self.weighted_returns = self._calculate_weighted_returns()
         self.dollar_returns = self._calculate_dollar_returns()
@@ -102,10 +105,15 @@ class Portfolio:
         self.metrics = self._calculate_metrics()
 
     def _fetch_data(self) -> pd.DataFrame:
-        return yf.download(self.tickers, period=self.period)
+        return yf.download(self.tickers, period=self.period, actions=self.reinvest_distributions)
 
     def _calculate_returns(self) -> pd.DataFrame:
-        return cast(pd.DataFrame, self.data.pct_change().dropna())
+        price_returns = self.price_values.pct_change()
+        if self.reinvest_distributions:
+            distribution_values = self.full_data["Dividends"].fillna(0.0)
+            distribution_returns = distribution_values / self.price_values.shift(1)
+            return cast(pd.DataFrame, (price_returns + distribution_returns).dropna())
+        return cast(pd.DataFrame, price_returns.dropna())
 
     def _calculate_weighted_returns(self) -> pd.Series:
         return (self.returns * self.weights).sum(axis=1)
@@ -123,7 +131,7 @@ class Portfolio:
 
         metrics = {
             "arithmetic_mean": float(arithmetic_mean(returns) * TRADING_DAYS_PER_YEAR),
-            "geometric_mean": float(geometric_mean(returns) * TRADING_DAYS_PER_YEAR),
+            "cagr": float(geometric_mean(returns) * TRADING_DAYS_PER_YEAR),
             "twr": float(time_weighted_return(returns)),
             "irr": float(money_weighted_return(values)),
             "sortino_ratio": float(sortino_ratio(returns) * np.sqrt(TRADING_DAYS_PER_YEAR)),
@@ -181,7 +189,7 @@ class Portfolio:
             other_value = other.metrics[metric]
             diff = float(value - other_value)
 
-            if metric in {"arithmetic_mean", "geometric_mean"}:
+            if metric in {"arithmetic_mean", "cagr"}:
                 # Use t-test for return metrics
                 t_stat, p_value = map(float, stats.ttest_ind(self.weighted_returns, other.weighted_returns))
                 is_significant = p_value < significance_level
@@ -308,7 +316,7 @@ def _clean_metric_name(name: str) -> str:
         return "mVaR 95"
     if name == "es_95":
         return "ES 95"
-    if name in {"twr", "irr"}:
+    if name in {"twr", "irr", "cagr"}:
         return name.upper()
     return name.replace("_", " ").title()
 
@@ -316,7 +324,7 @@ def _clean_metric_name(name: str) -> str:
 def _format_metric_value(name: str, value: float) -> str:
     percentage_metrics = {
         "arithmetic_mean",
-        "geometric_mean",
+        "cagr",
         "twr",
         "irr",
         "max_drawdown",

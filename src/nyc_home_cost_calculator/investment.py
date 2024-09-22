@@ -121,14 +121,14 @@ class InvestmentCalculator(AbstractSimulatorBase):
             An instance of InvestmentCalculator initialized with portfolio data.
         """
         # Calculate annualized return and volatility from portfolio data
-        returns = portfolio.metrics["arithmetic_mean"]
+        returns = portfolio.metrics["cagr"]
         volatility = portfolio.metrics["volatility"]
 
         # Set default parameters
         params = {
-            "initial_investment": portfolio.data.iloc[0].sum(),
+            "initial_investment": portfolio.price_values.iloc[0].sum(),
             "monthly_contribution": 0.0,  # Assume no additional contributions by default
-            "total_years": len(portfolio.data) // 252,  # Assuming 252 trading days per year
+            "total_years": len(portfolio.price_values) // 252,  # Assuming 252 trading days per year
             "mean_return_rate": returns,
             "volatility": volatility,
             "degrees_of_freedom": 5,  # Default value, can be overridden

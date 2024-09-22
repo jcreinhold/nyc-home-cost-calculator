@@ -155,14 +155,14 @@ def test_investment_calculator_from_portfolio(sample_portfolio: Portfolio) -> No
     calculator = InvestmentCalculator.from_portfolio(sample_portfolio)
 
     # Test initial investment
-    assert calculator.initial_investment == pytest.approx(sample_portfolio.data.iloc[0].sum())
+    assert calculator.initial_investment == pytest.approx(sample_portfolio.price_values.iloc[0].sum())
 
     # Test total years
-    expected_years = len(sample_portfolio.data) // 252
+    expected_years = len(sample_portfolio.price_values) // 252
     assert calculator.total_years == expected_years
 
     # Test mean return rate (annualized)
-    expected_mean_return = sample_portfolio.metrics["arithmetic_mean"]
+    expected_mean_return = sample_portfolio.metrics["cagr"]
     assert calculator.mean_return_rate == pytest.approx(expected_mean_return)
 
     # Test volatility (annualized)
